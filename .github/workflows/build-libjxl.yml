@@ -1,0 +1,109 @@
+name: build-libjxl
+
+# Reusable workflow: builds libjxl 0.11.2 (vendored under
+# dng_sdk_1_7_1/libjxl/libjxl/) as a Release shared library for each supported
+# RID. Results are cached keyed on the libjxl version header (changes only on
+# upstream upgrades) and uploaded as per-RID artifacts consumed by callers
+# (ci.yml, publish.yml).
+
+on:
+  workflow_call:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-libjxl:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            libname: jxl.dll
+          - os: ubuntu-latest
+            rid: linux-x64
+            libname: libjxl.so
+          - os: macos-latest
+            rid: osx-arm64
+            libname: libjxl.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache libjxl (${{ matrix.rid }})
+        id: cache-jxl
+        uses: actions/cache@v4
+        with:
+          path: libjxl-out
+          # Key on the version header + CMakeLists to invalidate when libjxl is upgraded.
+          key: libjxl-${{ matrix.rid }}-${{ hashFiles('dng_sdk_1_7_1/libjxl/libjxl/lib/include/jxl/version.h', 'dng_sdk_1_7_1/libjxl/libjxl/CMakeLists.txt') }}
+
+      - name: Configure libjxl
+        if: steps.cache-jxl.outputs.cache-hit != 'true'
+        run: >
+          cmake -B libjxl-build
+          -S dng_sdk_1_7_1/libjxl/libjxl
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=ON
+          -DBUILD_TESTING=OFF
+          -DJPEGXL_ENABLE_TOOLS=OFF
+          -DJPEGXL_ENABLE_TESTS=OFF
+          -DJPEGXL_ENABLE_BENCHMARK=OFF
+          -DJPEGXL_ENABLE_EXAMPLES=OFF
+          -DJPEGXL_ENABLE_MANPAGES=OFF
+          -DJPEGXL_ENABLE_JNI=OFF
+          -DJPEGXL_ENABLE_JPEGLI=OFF
+          -DJPEGXL_ENABLE_VIEWERS=OFF
+          -DJPEGXL_ENABLE_SJPEG=OFF
+          -DJPEGXL_FORCE_SYSTEM_BROTLI=OFF
+          -DJPEGXL_FORCE_SYSTEM_HWY=OFF
+
+      - name: Build libjxl
+        if: steps.cache-jxl.outputs.cache-hit != 'true'
+        run: cmake --build libjxl-build --config Release --target jxl --parallel
+
+      - name: Install libjxl
+        if: steps.cache-jxl.outputs.cache-hit != 'true'
+        run: cmake --install libjxl-build --prefix libjxl-inst --config Release
+
+      # Copy the runtime library to a flat directory under a known name so
+      # downstream jobs don't have to hunt for versioned symlink targets.
+      - name: Collect output (Windows)
+        if: steps.cache-jxl.outputs.cache-hit != 'true' && matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          mkdir -p libjxl-out
+          cp libjxl-inst/bin/jxl.dll     libjxl-out/jxl.dll
+          cp libjxl-inst/bin/jxl_cms.dll libjxl-out/jxl_cms.dll
+          # Brotli DLLs live in the build dir (not installed on Windows)
+          cp libjxl-build/third_party/brotli/Release/brotlicommon.dll libjxl-out/brotlicommon.dll
+          cp libjxl-build/third_party/brotli/Release/brotlidec.dll    libjxl-out/brotlidec.dll
+          cp libjxl-build/third_party/brotli/Release/brotlienc.dll    libjxl-out/brotlienc.dll
+
+      - name: Collect output (Linux)
+        if: steps.cache-jxl.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          mkdir -p libjxl-out
+          # Copy the real .so file (not a symlink) with the bare name.
+          find libjxl-inst/lib -name "libjxl.so.*" -type f | head -n1 | xargs -I{} cp {} libjxl-out/libjxl.so
+
+      - name: Collect output (macOS)
+        if: steps.cache-jxl.outputs.cache-hit != 'true' && matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          mkdir -p libjxl-out
+          # Copy the real dylib (not a symlink) with the bare name.
+          find libjxl-inst/lib -name "libjxl.*.dylib" -not -type l | head -n1 | xargs -I{} cp {} libjxl-out/libjxl.dylib
+
+      - name: Upload libjxl artifact (${{ matrix.rid }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: libjxl-${{ matrix.rid }}
+          # For Windows: upload the whole libjxl-out directory (jxl.dll + brotli companions).
+          # For Linux/macOS: only the main library file.
+          path: libjxl-out/
+          if-no-files-found: error

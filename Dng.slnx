@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Dng.Sdk.Jpeg/Dng.Sdk.Jpeg.csproj" />
+    <Project Path="src/Dng.Sdk.Jxl/Dng.Sdk.Jxl.csproj" />
+    <Project Path="src/Dng.Sdk.Preview/Dng.Sdk.Preview.csproj" />
+    <Project Path="src/Dng.Sdk.Xmp/Dng.Sdk.Xmp.csproj" />
+    <Project Path="src/Dng.Sdk/Dng.Sdk.csproj" />
+    <Project Path="src/Dng.Validate/Dng.Validate.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Dng.Sdk.Benchmarks/Dng.Sdk.Benchmarks.csproj" />
+    <Project Path="tests/Dng.Sdk.Tests/Dng.Sdk.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/SyntheticImageGenerator/SyntheticImageGenerator.csproj" />
+  </Folder>
+</Solution>

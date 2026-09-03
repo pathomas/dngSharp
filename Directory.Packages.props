@@ -1,0 +1,26 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Tests -->
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+
+    <!-- BDN -->
+    <PackageVersion Include="BenchmarkDotNet" Version="0.14.0" />
+
+    <!-- SkiaSharp — used by Dng.Sdk.Preview for JPEG + WebP encoding -->
+    <PackageVersion Include="SkiaSharp" Version="4.148.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Win32" Version="4.148.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.macOS" Version="4.148.0" />
+
+    <!-- CLI -->
+    <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+</Project>

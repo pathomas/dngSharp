@@ -1,0 +1,51 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!--
+      Analyzer suppressions justified by the DNG domain:
+        CA1051 — DNG porting layer keeps POD-style public fields (n,d,t,l,b,r,v,h)
+                 because that matches the on-disk layout and the C++ SDK API
+                 surface; converting to properties would obscure the mapping.
+        CA5351 — MD5 is mandated by the DNG file format for OriginalRawFileDigest,
+                 RawDataUniqueID, etc. It is not used for security.
+        CA1822 — Many SDK methods are stubs deferred to later phases; they will
+                 access instance data once implemented.
+        CA1062 — Public APIs are documented; null arg guards add noise to the
+                 tightly-typed numeric surface.
+        CA1711 — DngStream / DngFileStream / DngMemoryStream intentionally mirror
+                 C++ dng_stream / dng_file_stream / dng_memory_stream names so
+                 the port maps 1:1 onto the spec and reference impl.
+        CA1720 — TIFF type identifiers (Short, Long, Float, Double) follow the
+                 TIFF 6.0 specification; renaming would obscure spec semantics.
+    -->
+    <NoWarn>$(NoWarn);CA1051;CA5351;CA1822;CA1062;CA1711;CA1720</NoWarn>
+
+    <!-- Hot paths (pixel buffers, linearization, demosaic, color transform) use
+         pointers + Span<T>. Unsafe is enabled everywhere; reserve its use for
+         measured wins and keep the unsafe surface area small. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- AOT-friendly defaults; individual projects may opt out via IsAotCompatible=false -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Determinism / repro -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Repo metadata -->
+    <Company>dng-net contributors</Company>
+    <Product>Dng.Sdk</Product>
+    <RepositoryUrl>https://github.com/pathomas/dng</RepositoryUrl>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <!-- CLI dev tool, not a shipping SDK assembly; no need for AOT/trim analysis. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dng.Sdk\Dng.Sdk.csproj" />
+  </ItemGroup>
+
+  <!-- Reuse the exact pattern/DNG/TIFF builders already exercised by the
+       xUnit regression suite, instead of duplicating them here, so this CLI
+       and the test fixtures never drift apart. -->
+  <ItemGroup>
+    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticPixelPatterns.cs" Link="TestImages\SyntheticPixelPatterns.cs" />
+    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticDngBuilder.cs" Link="TestImages\SyntheticDngBuilder.cs" />
+    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticTiffBuilder.cs" Link="TestImages\SyntheticTiffBuilder.cs" />
+    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\OpcodeListTestBuilder.cs" Link="TestImages\OpcodeListTestBuilder.cs" />
+  </ItemGroup>
+
+</Project>

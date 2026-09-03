@@ -1,0 +1,50 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+*.binlog
+
+# Native/CMake/MSVC build artifacts (repo-wide)
+x64/
+x64_Debug/
+x64_Release/
+*.tlog
+*.pdb
+*.ilk
+*.idb
+CMakeFiles/
+CMakeCache.txt
+install_manifest.txt
+
+# Vendored Adobe DNG SDK 1.7.1 — external reference dependency, obtained
+# locally by each contributor, never committed. See THIRD-PARTY-NOTICES.md.
+dng_sdk_1_7_1/
+
+# Local native library build/install scratch dirs (tools/build-libjxl.ps1)
+libjxl-build/
+libjxl-inst/
+
+# Benchmark output
+BenchmarkDotNet.Artifacts/
+
+# Stray tool cache
+.remember/
+
+# Personal/local test assets (large binaries; not part of the repo)
+images/
+
+# Generated synthetic DNG/TIFF fixtures (tools/generate_synthetic_images.py) -
+# regenerable scratch output, not part of the repo.
+synthetic/
+
+# Goldens (regenerated locally; large binaries)
+tests/golden/*/
+!tests/golden/README.md
+!tests/golden/capture.ps1
+
+# OS junk
+Thumbs.db
+.DS_Store

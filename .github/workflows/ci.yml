@@ -1,0 +1,120 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  # ── libjxl native build ────────────────────────────────────────────────────
+  # Delegates to the reusable workflow shared with publish.yml so the libjxl
+  # build steps aren't duplicated across workflow files.
+  build-libjxl:
+    uses: ./.github/workflows/build-libjxl.yml
+
+  # ── managed build + test ───────────────────────────────────────────────────
+  build-test:
+    needs: build-libjxl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            libname: jxl.dll
+          - os: ubuntu-latest
+            rid: linux-x64
+            libname: libjxl.so
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download libjxl (${{ matrix.rid }})
+        uses: actions/download-artifact@v4
+        with:
+          name: libjxl-${{ matrix.rid }}
+          path: libjxl-native
+
+      # Place libjxl in the Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
+      # so the <None Include="runtimes/**"> glob in the .csproj copies it to
+      # every output directory that references Dng.Sdk.Jxl.
+      - name: Place libjxl runtime asset
+        shell: bash
+        run: |
+          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+
+      - name: Restore
+        run: dotnet restore Dng.slnx
+
+      - name: Build
+        run: dotnet build Dng.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Dng.slnx --configuration Release --no-build --verbosity normal
+
+  # ── AOT publish smoke ──────────────────────────────────────────────────────
+  aot-smoke:
+    needs: build-libjxl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            exe: Dng.Validate.exe
+            libname: jxl.dll
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: Dng.Validate
+            libname: libjxl.so
+          - os: macos-latest
+            rid: osx-arm64
+            exe: Dng.Validate
+            libname: libjxl.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download libjxl (${{ matrix.rid }})
+        uses: actions/download-artifact@v4
+        with:
+          name: libjxl-${{ matrix.rid }}
+          path: libjxl-native
+
+      - name: Place libjxl runtime asset
+        shell: bash
+        run: |
+          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+
+      - name: AOT publish Dng.Validate (${{ matrix.rid }})
+        run: >
+          dotnet publish src/Dng.Validate/Dng.Validate.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained
+          -p:PublishAot=true
+
+      - name: Smoke-run AOT binary against a sample DNG
+        shell: bash
+        run: |
+          exe=$(find src/Dng.Validate/bin/Release -name '${{ matrix.exe }}' -type f | head -n1)
+          if [ -z "$exe" ]; then echo "AOT binary not found" >&2; exit 1; fi
+          echo "Running $exe"
+          "$exe" -v dng_sdk_1_7_1/sample_files/05_PGTM2_unsigned8.dng > /dev/null

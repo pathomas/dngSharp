@@ -1,0 +1,26 @@
+<Project>
+
+  <!-- Test projects: keep AOT/trim flags off; xUnit + reflection don't play with AOT. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <!--
+      CA1707: tests use snake_case names per xUnit community convention.
+      CA1515: xUnit needs test classes to be public so the runner can discover them.
+    -->
+    <NoWarn>$(NoWarn);CA1707;CA1515</NoWarn>
+  </PropertyGroup>
+
+  <!-- Benchmark project: same relaxations as tests (reflection-heavy BDN attributes,
+       xUnit-style discovery); disable warnings-as-errors so BDN's benchmark-must-be-public
+       requirement doesn't fight CA1515 in Release. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Benchmarks'))">
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <OutputType>Exe</OutputType>
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1822</NoWarn>
+  </PropertyGroup>
+
+</Project>

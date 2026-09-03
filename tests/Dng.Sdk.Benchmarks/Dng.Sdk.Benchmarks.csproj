@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- BDN spawns a per-benchmark process; must be Exe. Property is also
+         set by Directory.Build.targets for *.Benchmarks projects. -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Dng.Sdk\Dng.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\Dng.Sdk.Jxl\Dng.Sdk.Jxl.csproj" />
+  </ItemGroup>
+
+</Project>

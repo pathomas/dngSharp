@@ -1,0 +1,149 @@
+name: publish
+
+# Builds AOT self-contained Dng.Validate CLI binaries for win-x64, linux-x64,
+# and osx-arm64, packages each into an archive, and attaches them to a
+# GitHub Release. Triggered by pushing a version tag (v*.*.*) or manually via
+# workflow_dispatch.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >
+          Version label to use for the release/archive names when run
+          manually (e.g. "v0.10.0-rc1"). Ignored on tag-triggered runs, which
+          use the pushed tag name instead.
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+
+jobs:
+  build-libjxl:
+    uses: ./.github/workflows/build-libjxl.yml
+
+  # ── AOT-publish Dng.Validate per RID, package into an archive ─────────────
+  publish:
+    needs: build-libjxl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            exe: Dng.Validate.exe
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: Dng.Validate
+          - os: macos-latest
+            rid: osx-arm64
+            exe: Dng.Validate
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download libjxl (${{ matrix.rid }})
+        uses: actions/download-artifact@v4
+        with:
+          name: libjxl-${{ matrix.rid }}
+          path: libjxl-native
+
+      # Place libjxl in the Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
+      # so the <None Include="runtimes/**"> glob in the .csproj copies it to
+      # every output directory that references Dng.Sdk.Jxl.
+      - name: Place libjxl runtime asset
+        shell: bash
+        run: |
+          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: AOT publish Dng.Validate (${{ matrix.rid }})
+        run: >
+          dotnet publish src/Dng.Validate/Dng.Validate.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained
+          -p:PublishAot=true
+
+      - name: Package archive (${{ matrix.rid }})
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          if [ -z "$out_dir" ]; then echo "publish output not found" >&2; exit 1; fi
+
+          name="dng-validate-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
+          mkdir -p dist
+
+          if [ "${{ matrix.rid }}" = "win-x64" ]; then
+            archive="dist/${name}.zip"
+            (cd "$out_dir" && 7z a -tzip "$OLDPWD/$archive" .) > /dev/null
+          else
+            archive="dist/${name}.tar.gz"
+            tar -czf "$archive" -C "$out_dir" .
+          fi
+
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-run AOT binary against a sample DNG
+        shell: bash
+        run: |
+          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          exe="$out_dir/${{ matrix.exe }}"
+          if [ ! -f "$exe" ]; then echo "AOT binary not found at $exe" >&2; exit 1; fi
+          echo "Running $exe"
+          "$exe" -v dng_sdk_1_7_1/sample_files/05_PGTM2_unsigned8.dng > /dev/null
+
+      - name: Upload archive artifact (${{ matrix.rid }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: dng-validate-${{ matrix.rid }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  # ── create the GitHub Release and attach all per-RID archives ─────────────
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dng-validate-*
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || format('Manual build {0}', github.run_number) }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' }}
+          files: dist/*
+          fail_on_unmatched_files: true
