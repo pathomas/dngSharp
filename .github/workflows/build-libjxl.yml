@@ -71,7 +71,7 @@ jobs:
 
       - name: Build libjxl
         if: steps.cache-jxl.outputs.cache-hit != 'true'
-        run: cmake --build libjxl-build --config Release --target jxl --parallel
+        run: cmake --build libjxl-build --config Release --parallel
 
       - name: Install libjxl
         if: steps.cache-jxl.outputs.cache-hit != 'true'
