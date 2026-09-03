@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      run_macos:
+        description: >
+          Also run the macOS legs (libjxl build + AOT smoke test). macOS
+          runners are the scarcest/most expensive CI resource, so they're
+          skipped unless explicitly requested here.
+        type: boolean
+        default: false
 
 env:
   DOTNET_NOLOGO: true
@@ -16,6 +25,8 @@ jobs:
   # build steps aren't duplicated across workflow files.
   build-libjxl:
     uses: ./.github/workflows/build-libjxl.yml
+    with:
+      include_macos: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_macos == 'true' }}
 
   # ── managed build + test ───────────────────────────────────────────────────
   build-test:
@@ -64,24 +75,25 @@ jobs:
         run: dotnet test Dng.slnx --configuration Release --no-build --verbosity normal
 
   # ── AOT publish smoke ──────────────────────────────────────────────────────
+  aot-smoke-set-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          include='[{"os":"windows-latest","rid":"win-x64","exe":"Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"Dng.Validate","libname":"libjxl.so"}]'
+          if [ "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_macos == 'true' }}" = "true" ]; then
+            include='[{"os":"windows-latest","rid":"win-x64","exe":"Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"Dng.Validate","libname":"libjxl.so"},{"os":"macos-latest","rid":"osx-arm64","exe":"Dng.Validate","libname":"libjxl.dylib"}]'
+          fi
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
   aot-smoke:
-    needs: build-libjxl
+    needs: [build-libjxl, aot-smoke-set-matrix]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            rid: win-x64
-            exe: Dng.Validate.exe
-            libname: jxl.dll
-          - os: ubuntu-latest
-            rid: linux-x64
-            exe: Dng.Validate
-            libname: libjxl.so
-          - os: macos-latest
-            rid: osx-arm64
-            exe: Dng.Validate
-            libname: libjxl.dylib
+      matrix: ${{ fromJson(needs.aot-smoke-set-matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

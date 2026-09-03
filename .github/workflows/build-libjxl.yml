@@ -8,6 +8,13 @@ name: build-libjxl
 
 on:
   workflow_call:
+    inputs:
+      # macOS runners are the most expensive/limited CI resource, so callers
+      # opt in explicitly. Defaults to true so publish.yml (which always
+      # needs all three RIDs for a release) doesn't have to pass anything.
+      include_macos:
+        type: boolean
+        default: true
 
 env:
   DOTNET_NOLOGO: true
@@ -15,20 +22,28 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
 
 jobs:
+  # Computes the build matrix so the macOS entry can be included/excluded
+  # based on the include_macos input, since matrix `include` lists can't be
+  # conditional on their own.
+  set-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        shell: bash
+        run: |
+          include='[{"os":"windows-latest","rid":"win-x64","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","libname":"libjxl.so"}]'
+          if [ "${{ inputs.include_macos }}" = "true" ]; then
+            include='[{"os":"windows-latest","rid":"win-x64","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","libname":"libjxl.so"},{"os":"macos-latest","rid":"osx-arm64","libname":"libjxl.dylib"}]'
+          fi
+          echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
+
   build-libjxl:
+    needs: set-matrix
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            rid: win-x64
-            libname: jxl.dll
-          - os: ubuntu-latest
-            rid: linux-x64
-            libname: libjxl.so
-          - os: macos-latest
-            rid: osx-arm64
-            libname: libjxl.dylib
+      matrix: ${{ fromJson(needs.set-matrix.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
