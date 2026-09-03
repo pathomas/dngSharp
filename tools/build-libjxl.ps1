@@ -100,7 +100,7 @@ if ($IsWindows) {
 & $cmake @cmakeArgs
 if ($LASTEXITCODE -ne 0) { throw "cmake configure failed" }
 
-& $cmake --build $buildDir --config Release --target jxl --parallel
+& $cmake --build $buildDir --config Release --parallel
 if ($LASTEXITCODE -ne 0) { throw "cmake build failed" }
 
 & $cmake --install $buildDir --prefix $instDir --config Release

@@ -16,6 +16,9 @@ on:
         type: boolean
         default: true
 
+permissions:
+  contents: read
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -48,6 +51,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout libjxl source
+        uses: actions/checkout@v4
+        with:
+          repository: libjxl/libjxl
+          ref: v0.11.2
+          path: dng_sdk_1_7_1/libjxl/libjxl
+          submodules: recursive
+
       - name: Cache libjxl (${{ matrix.rid }})
         id: cache-jxl
         uses: actions/cache@v4
@@ -78,7 +89,7 @@ jobs:
 
       - name: Build libjxl
         if: steps.cache-jxl.outputs.cache-hit != 'true'
-        run: cmake --build libjxl-build --config Release --target jxl --parallel
+        run: cmake --build libjxl-build --config Release --parallel
 
       - name: Install libjxl
         if: steps.cache-jxl.outputs.cache-hit != 'true'
