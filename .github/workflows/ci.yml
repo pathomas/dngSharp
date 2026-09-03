@@ -111,10 +111,14 @@ jobs:
           --self-contained
           -p:PublishAot=true
 
+      - name: Generate synthetic sample DNG
+        run: dotnet run --project tools/SyntheticImageGenerator -- --outdir synthetic --size 64
+
       - name: Smoke-run AOT binary against a sample DNG
         shell: bash
         run: |
-          exe=$(find src/Dng.Validate/bin/Release -name '${{ matrix.exe }}' -type f | head -n1)
-          if [ -z "$exe" ]; then echo "AOT binary not found" >&2; exit 1; fi
+          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          exe="$out_dir/${{ matrix.exe }}"
+          if [ ! -f "$exe" ]; then echo "AOT binary not found at $exe" >&2; exit 1; fi
           echo "Running $exe"
-          "$exe" -v dng_sdk_1_7_1/sample_files/05_PGTM2_unsigned8.dng > /dev/null
+          "$exe" -v synthetic/gradient_64.dng > /dev/null
