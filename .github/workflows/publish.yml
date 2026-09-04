@@ -3,9 +3,10 @@ name: publish
 # Builds AOT self-contained Dng.Validate CLI binaries for win-x64, linux-x64,
 # and osx-arm64, packages each into an archive, and attaches them to a
 # GitHub Release. Also builds the Dng.Sdk* class libraries and publishes them
-# both as NuGet packages and as per-RID DLL archives (the latter bundle the
-# RID-specific native libjxl asset). Triggered by pushing a version tag
-# (v*.*.*) or manually via workflow_dispatch.
+# as NuGet packages to GitHub Packages as well as per-RID DLL archives (the
+# latter bundle the RID-specific native libjxl asset) attached to the
+# release. Triggered by pushing a version tag (v*.*.*) or manually via
+# workflow_dispatch.
 
 on:
   push:
@@ -23,6 +24,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
   DOTNET_NOLOGO: true
@@ -182,6 +184,15 @@ jobs:
           name: dng-sdk-nuget
           path: dist/nuget/*.nupkg
           if-no-files-found: error
+
+      - name: Publish NuGet packages to GitHub Packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet nuget push "dist/nuget/*.nupkg" \
+            --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
+            --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --skip-duplicate
 
   # ── build Dng.Sdk* class libraries and package the DLLs per-RID ───────────
   # (per-RID because Dng.Sdk.Jxl bundles a RID-specific native libjxl asset)
