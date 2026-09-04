@@ -245,10 +245,10 @@ jobs:
           out="dist/$name"
           mkdir -p "$out"
 
-          # Merge each project's output dir; -n skips files already copied
-          # (e.g. Dng.Sdk.dll, which every satellite project references).
+          # Merge each project's output dir. Later copies replace identical
+          # shared dependencies (e.g. Dng.Sdk.dll).
           for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
-            cp -rn "src/$proj/bin/Release/net10.0/." "$out/"
+            cp -R "src/$proj/bin/Release/net10.0/." "$out/"
           done
 
           if [ "${{ matrix.rid }}" = "win-x64" ]; then
