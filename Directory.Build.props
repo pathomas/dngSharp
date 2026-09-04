@@ -46,6 +46,15 @@
     <Company>dng-net contributors</Company>
     <Product>Dng.Sdk</Product>
     <RepositoryUrl>https://github.com/pathomas/dng</RepositoryUrl>
+
+    <!-- NuGet packaging defaults. Individual projects opt in with
+         <IsPackable>true</IsPackable> + <PackageId>/<Description>. -->
+    <IsPackable>false</IsPackable>
+    <Authors>dng-net contributors</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>dng;dngsdk;adobe-dng;raw-image;tiff</PackageTags>
   </PropertyGroup>
 
 </Project>

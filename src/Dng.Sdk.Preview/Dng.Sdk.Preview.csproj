@@ -8,6 +8,10 @@
          until native-interop marshaling is annotated upstream. -->
     <IsAotCompatible>false</IsAotCompatible>
     <IsTrimmable>false</IsTrimmable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>Dng.Sdk.Preview</PackageId>
+    <Description>SkiaSharp-based preview rendering (JPEG/WebP encoding) for Dng.Sdk.</Description>
   </PropertyGroup>
 
   <ItemGroup>

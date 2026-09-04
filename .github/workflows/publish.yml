@@ -2,8 +2,10 @@ name: publish
 
 # Builds AOT self-contained Dng.Validate CLI binaries for win-x64, linux-x64,
 # and osx-arm64, packages each into an archive, and attaches them to a
-# GitHub Release. Triggered by pushing a version tag (v*.*.*) or manually via
-# workflow_dispatch.
+# GitHub Release. Also builds the Dng.Sdk* class libraries and publishes them
+# both as NuGet packages and as per-RID DLL archives (the latter bundle the
+# RID-specific native libjxl asset). Triggered by pushing a version tag
+# (v*.*.*) or manually via workflow_dispatch.
 
 on:
   push:
@@ -129,17 +131,167 @@ jobs:
           path: ${{ steps.package.outputs.archive }}
           if-no-files-found: error
 
-  # ── create the GitHub Release and attach all per-RID archives ─────────────
-  release:
-    needs: publish
+  # ── pack Dng.Sdk* managed libraries as NuGet packages ──────────────────────
+  pack-sdk-nuget:
     runs-on: ubuntu-latest
     steps:
-      - name: Download all archives
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # NuGet package versions must be valid SemVer; the tag's leading "v" is
+      # stripped, and non-SemVer manual labels (e.g. "dev") are wrapped into a
+      # 0.0.0-<label> prerelease version.
+      - name: Compute NuGet package version
+        id: nuget-version
+        shell: bash
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          v="${v#v}"
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            v="0.0.0-$v"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Pack Dng.Sdk* NuGet packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/nuget
+          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
+            dotnet pack "src/$proj/$proj.csproj" -c Release -o dist/nuget \
+              -p:PackageVersion=${{ steps.nuget-version.outputs.version }}
+          done
+
+      - name: Upload NuGet packages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dng-sdk-nuget
+          path: dist/nuget/*.nupkg
+          if-no-files-found: error
+
+  # ── build Dng.Sdk* class libraries and package the DLLs per-RID ───────────
+  # (per-RID because Dng.Sdk.Jxl bundles a RID-specific native libjxl asset)
+  publish-sdk-dlls:
+    needs: build-libjxl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Download libjxl (${{ matrix.rid }})
+        uses: actions/download-artifact@v4
+        with:
+          name: libjxl-${{ matrix.rid }}
+          path: libjxl-native
+
+      - name: Place libjxl runtime asset
+        shell: bash
+        run: |
+          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Dng.Sdk* class libraries (${{ matrix.rid }})
+        shell: bash
+        run: |
+          set -euo pipefail
+          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
+            dotnet build "src/$proj/$proj.csproj" -c Release
+          done
+
+      - name: Collect and package DLLs (${{ matrix.rid }})
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="dng-sdk-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
+          out="dist/$name"
+          mkdir -p "$out"
+
+          # Merge each project's output dir; -n skips files already copied
+          # (e.g. Dng.Sdk.dll, which every satellite project references).
+          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
+            cp -rn "src/$proj/bin/Release/net10.0/." "$out/"
+          done
+
+          if [ "${{ matrix.rid }}" = "win-x64" ]; then
+            archive="dist/${name}.zip"
+            (cd "$out" && 7z a -tzip "$OLDPWD/$archive" .) > /dev/null
+          else
+            archive="dist/${name}.tar.gz"
+            tar -czf "$archive" -C "$out" .
+          fi
+
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DLL archive artifact (${{ matrix.rid }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: dng-sdk-dlls-${{ matrix.rid }}
+          path: ${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  # ── create the GitHub Release and attach all per-RID archives ─────────────
+  release:
+    needs: [publish, pack-sdk-nuget, publish-sdk-dlls]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Dng.Validate archives
         uses: actions/download-artifact@v4
         with:
           pattern: dng-validate-*
           path: dist
           merge-multiple: true
+
+      - name: Download Dng.Sdk DLL archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dng-sdk-dlls-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download Dng.Sdk NuGet packages
+        uses: actions/download-artifact@v4
+        with:
+          name: dng-sdk-nuget
+          path: dist
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

@@ -8,6 +8,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>Dng.Sdk.Jxl</PackageId>
+    <Description>JPEG XL codec adapter for Dng.Sdk (P/Invokes libjxl; native runtime assets are distributed separately per-RID in the DLL zip release archives).</Description>
   </PropertyGroup>
 
   <!--

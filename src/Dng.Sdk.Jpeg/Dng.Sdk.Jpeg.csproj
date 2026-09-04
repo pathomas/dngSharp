@@ -8,6 +8,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>Dng.Sdk.Jpeg</PackageId>
+    <Description>JPEG codec adapter for Dng.Sdk.</Description>
   </PropertyGroup>
 
 </Project>
