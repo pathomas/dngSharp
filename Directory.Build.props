@@ -45,7 +45,7 @@
     <!-- Repo metadata -->
     <Company>dng-net contributors</Company>
     <Product>Dng.Sdk</Product>
-    <RepositoryUrl>https://github.com/pathomas/dng</RepositoryUrl>
+    <RepositoryUrl>https://github.com/pathomas/dngSharp</RepositoryUrl>
 
     <!-- NuGet packaging defaults. Individual projects opt in with
          <IsPackable>true</IsPackable> + <PackageId>/<Description>. -->
