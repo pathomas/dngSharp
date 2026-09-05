@@ -17,7 +17,7 @@ shadow-recovery exposure ramp (`fShadows = 5.0`, ~line 2169, applied whenever th
 is NOT output-referred — see `dng_render::Render` around line 2186-2198, which only zeroes
 `fShadows`/uses identity for `IsOutputReferred()` negatives). This lifts dim/near-black raw
 regions (e.g. Apple ProRAW optical-black/masked edge columns) to blown-out white, blending
-with surrounding highlights. Our `Dng.Sdk.Render.HdrToneMapper.SCurve` is a much weaker
+with surrounding highlights. Our `DngSharp.Dng.Sdk.Render.HdrToneMapper.SCurve` is a much weaker
 hand-authored heuristic and is also incorrectly gated behind `!opts.HdrMode` in
 `Program.cs` (`RenderAndSave`, ~line 439) as if it were HDR-only logic, when native applies
 its default curve unconditionally for any scene-referred DNG regardless of
@@ -26,7 +26,7 @@ its default curve unconditionally for any scene-referred DNG regardless of
 **Fix plan:**
 1. Port the exact 256-entry `kTable` float array from `dng_tone_curve_acr3_default::Evaluate`
    (`dng_render.cpp` lines 211-470) into a new C# class (e.g.
-   `Dng.Sdk/Render/Acr3DefaultToneCurve.cs`), replicating the linear-interpolation lookup
+   `DngSharp.Dng.Sdk/Render/Acr3DefaultToneCurve.cs`), replicating the linear-interpolation lookup
    (`Evaluate`) and inverse (`EvaluateInverse`, ~line 488+) methods.
 2. Port the shadow-recovery ramp/exposure-ramp concatenation logic (`dng_function_exposure_ramp`
    used in `dng_1d_concatenate totalTone = exposureTone + ToneCurve`, ~line 1058-1061) so
@@ -37,7 +37,7 @@ its default curve unconditionally for any scene-referred DNG regardless of
 4. Re-render `IMG_3356-HDR.dng` with `-jpeg` and re-run the column-brightness diff analysis
    against native `dng_validate -tif` output to confirm the left-edge region now renders as
    clipped white (or at least visually matches native).
-5. Add/adjust a `Dng.Sdk.Tests` unit test asserting `Acr3DefaultToneCurve.Evaluate` matches
+5. Add/adjust a `DngSharp.Dng.Sdk.Tests` unit test asserting `Acr3DefaultToneCurve.Evaluate` matches
    known native control points, to guard against regression.
 6. Consider whether this should also become the default when no camera profile is present
    at all (not just missing `ProfileToneCurve` within a present profile).
@@ -47,7 +47,7 @@ its default curve unconditionally for any scene-referred DNG regardless of
 ### Synthetic test-image fixtures (visual-artifact regression suite)
 
 Follow-ons to the gradient (`GradientDngTests`) and circle (`CircleDngTests`) fixtures
-already built in `tests/Dng.Sdk.Tests/TestImages/`. Grouped by what they guard against:
+already built in `tests/DngSharp.Dng.Sdk.Tests/TestImages/`. Grouped by what they guard against:
 
 **Color**
 - `test-primary-color-patches` — Pure primary/secondary color patch test. Grid of solid
@@ -127,18 +127,18 @@ Skip and document samples requiring unimplemented opcodes.
 | `inventory-goldens` | Inventoried golden artifacts per sample |
 | `golden-verbose-diff` | `GoldenVerboseDiffTests` — byte order, BigTIFF, IFD 0 shape (14/14) |
 | `golden-roundtrip-diff` | `GoldenRoundTripDiffTests` — managed `-dng` self-diff (10/14) |
-| `bench-harness` | `Dng.Sdk.Benchmarks` project + BDN switcher |
+| `bench-harness` | `DngSharp.Dng.Sdk.Benchmarks` project + BDN switcher |
 | `bench-baseline-record` | Baseline recorded in `docs/perf/phase10-baseline.md` (parse-only < 400 μs) |
 | `aot-smoke-ci` | AOT publish CI on win-x64 / linux-x64 / osx-arm64 with sample smoke-run |
 | `refresh-status-md` | `STATUS.md` and `PORTING_PLAN.md` reconciled |
-| `jxl-libjxl-build-ci` | libjxl built + cached in CI; runtime assets placed in `Dng.Sdk.Jxl/runtimes/` |
+| `jxl-libjxl-build-ci` | libjxl built + cached in CI; runtime assets placed in `DngSharp.Dng.Sdk.Jxl/runtimes/` |
 | `jxl-decode-full` | `JxlDecoder.Decode` — full libjxl state-machine; partial-tile boundary; Float16 |
 | `strip-tile-reader` | `StripReader.ReadStage1` — strip + tile layouts; out-of-line offset arrays |
 | `linearraw-passthrough` | `Stage3Builder` LinearRaw/RGB passthrough; `CanBuild()` guard |
 | `color-pipeline-wire` | `Stage3Renderer` — camera → XYZ_D50 → Bradford CAT → sRGB; baseline exposure |
 | `hdr-tonemap` | `HdrToneMapper` — `ProfileToneCurve` preferred; Reinhard fallback |
-| `preview-project` | `Dng.Sdk.Preview` (SkiaSharp 4.148) — `JpegEncoder`, `WebPEncoder` (SDR + HDR F16) |
-| `cli-jpeg-webp-flags` | `-jpeg` / `-webp` / `-hdr` CLI flags in `Dng.Validate` |
+| `preview-project` | `DngSharp.Dng.Sdk.Preview` (SkiaSharp 4.148) — `JpegEncoder`, `WebPEncoder` (SDR + HDR F16) |
+| `cli-jpeg-webp-flags` | `-jpeg` / `-webp` / `-hdr` CLI flags in `DngSharp.Dng.Validate` |
 | `milestone-a-status` | STATUS / PORTING_PLAN updated for Milestone A |
 | `ifd-metadata-reader` | `LinearizationReader` + `MosaicInfoReader` (parse BlackLevel, WhiteLevel, CFAPattern, …) |
 | `linearization-full` | Stage2Builder full linearisation — `BlackLevelRepeatDim` tiling, multi-plane arrays |

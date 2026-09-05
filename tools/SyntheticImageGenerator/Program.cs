@@ -1,6 +1,6 @@
 // Generates small, analytically-known synthetic DNG and TIFF fixtures for
 // manual inspection / external tooling, reusing the same builders exercised
-// by tests/Dng.Sdk.Tests/TestImages/*.cs (SyntheticDngBuilder /
+// by tests/DngSharp.Dng.Sdk.Tests/TestImages/*.cs (SyntheticDngBuilder /
 // SyntheticTiffBuilder / SyntheticPixelPatterns) so output here and the test
 // fixtures never drift apart.
 //
@@ -12,9 +12,9 @@
 //   dotnet run --project tools/SyntheticImageGenerator -- --outdir synthetic --size 64 128
 //   dotnet run --project tools/SyntheticImageGenerator -- --big-endian
 
-using Dng.Sdk.Tests.TestImages;
-using Dng.Sdk.Tiff;
-using Dng.Sdk.Writer;
+using DngSharp.Dng.Sdk.Tests.TestImages;
+using DngSharp.Dng.Sdk.Tiff;
+using DngSharp.Dng.Sdk.Writer;
 
 string outDir = "synthetic";
 var sizes = new List<int>();

@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Not packed on its own; bundled into the single DngSharp.Dng.Sdk
+         nupkg by the DngSharp.Dng.Sdk.Package meta project. PackageId is
+         still set (even though unpackable) to disambiguate this project's
+         NuGet restore-graph identity from the meta project, which shares
+         the "DngSharp.Dng.Sdk" name. -->
+    <IsPackable>false</IsPackable>
+    <PackageId>DngSharp.Dng.Sdk.Core.Internal</PackageId>
+    <Description>Managed .NET port of the Adobe DNG SDK: core primitives, TIFF/IFD container parsing, and pixel pipeline types.</Description>
+  </PropertyGroup>
+
+</Project>

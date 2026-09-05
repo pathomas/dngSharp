@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    This project has no source of its own. Its only purpose is to bundle
+    the 5 separately-compiled DngSharp.Dng.Sdk* assemblies into a single
+    NuGet package (one nupkg, five DLLs) instead of publishing 5 separate
+    packages. Each referenced project keeps its own compile boundary /
+    assembly identity; only the packaging step is consolidated here.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>true</IsPackable>
+    <PackageId>DngSharp.Dng.Sdk</PackageId>
+    <Description>Managed .NET port of the Adobe DNG SDK: core primitives, TIFF/IFD container parsing, pixel pipeline, JPEG/JPEG XL codec adapters, XMP metadata, and SkiaSharp-based preview rendering, bundled as a single package.</Description>
+
+    <!-- This project builds an empty stub assembly of its own (no .cs
+         files); that's fine — it ships alongside the 5 real DLLs in
+         lib/net10.0/. Suppressing IncludeBuildOutput entirely trips
+         NU5128 because PackageReference-derived dependencies still
+         require a lib/ref match for this TFM. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets=all: pull in build output without adding these as
+         NuGet dependency edges (they have no PackageId of their own to
+         reference; they're flattened into this package instead). -->
+    <ProjectReference Include="..\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\DngSharp.Dng.Sdk.Jpeg\DngSharp.Dng.Sdk.Jpeg.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\DngSharp.Dng.Sdk.Xmp\DngSharp.Dng.Sdk.Xmp.csproj" PrivateAssets="all" />
+    <ProjectReference Include="..\DngSharp.Dng.Sdk.Preview\DngSharp.Dng.Sdk.Preview.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- SkiaSharp stays a real NuGet dependency (not flattened) so its
+         own per-RID native-asset resolution keeps working for consumers. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Vendored per-RID native libjxl binaries (built via
+         tools/build-libjxl.ps1 or CI); packed under runtimes/<rid>/native/
+         so NuGet's RID graph selects the right one for consumers. Produces
+         no items (and the pack still succeeds) when no local build exists. -->
+    <None Include="$(MSBuildThisFileDirectory)..\DngSharp.Dng.Sdk.Jxl\runtimes\**"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\DngSharp.Dng.Sdk.Jxl\runtimes')"
+          Pack="true"
+          PackagePath="runtimes\" />
+  </ItemGroup>
+
+  <!-- Standard "multi-assembly pack" recipe: copy each ProjectReference's
+       build output (DLL + PDB) into this package's lib/net10.0/ folder. -->
+  <PropertyGroup>
+    <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+  </PropertyGroup>
+
+  <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
+    <ItemGroup>
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('Extension', '.dll'))" />
+      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('Extension', '.pdb'))" />
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -22,10 +22,10 @@ _Last updated: 2026-06-30_
 ```powershell
 dotnet build Dng.slnx -c Release                                      # 0 warnings, 0 errors
 dotnet test  Dng.slnx -c Release                                      # 336/336 passing
-dotnet run --project src\Dng.Validate  -c Release -- <file.dng>       # CLI summary
-dotnet run --project src\Dng.Validate  -c Release -- -jpeg out.jpg <file.dng>   # JPEG output
-dotnet run --project src\Dng.Validate  -c Release -- -webp out.webp <file.dng>  # WebP output
-dotnet run --project src\Dng.Validate  -c Release -- -webp out.webp -hdr <file.dng>  # HDR WebP (F16)
+dotnet run --project src\DngSharp.Dng.Validate  -c Release -- <file.dng>       # CLI summary
+dotnet run --project src\DngSharp.Dng.Validate  -c Release -- -jpeg out.jpg <file.dng>   # JPEG output
+dotnet run --project src\DngSharp.Dng.Validate  -c Release -- -webp out.webp <file.dng>  # WebP output
+dotnet run --project src\DngSharp.Dng.Validate  -c Release -- -webp out.webp -hdr <file.dng>  # HDR WebP (F16)
 pwsh tools\build-libjxl.ps1                                           # build native libjxl locally
 pwsh tests\golden\capture.ps1 -VerboseOnly                            # refresh native -v goldens
 ```
@@ -54,15 +54,15 @@ New in this milestone:
 
 | Component | What was built |
 |---|---|
-| `Dng.Sdk.Jxl` (fully wired) | `JxlDecoder.Decode` — full libjxl state-machine (BasicInfo → NeedImageOutBuffer → FullImage → Success); partial-tile boundary copy; Float16 pixel type support in Stage2Builder |
+| `DngSharp.Dng.Sdk.Jxl` (fully wired) | `JxlDecoder.Decode` — full libjxl state-machine (BasicInfo → NeedImageOutBuffer → FullImage → Success); partial-tile boundary copy; Float16 pixel type support in Stage2Builder |
 | `StripReader` | File → Stage1 image via codec registry; strip + tile layouts; out-of-line BitsPerSample/SampleFormat/Offset arrays |
 | `Stage3Builder` | LinearRaw/RGB passthrough; `CanBuild` guard for unsupported photometrics (Bayer CFA → Milestone B) |
 | `Stage3Renderer` | Camera-space Float32 → linear sRGB: `cameraToXyzD50` matrix, `D50→D65 Bradford CAT`, `XYZ_D65→sRGB` matrix, baseline exposure, optional tone curve; `GammaAndQuantize` helper |
 | `HdrToneMapper` | HDR → SDR: ProfileToneCurve (piecewise-linear) preferred; Reinhard fallback; operates in-place on Float32 |
-| `Dng.Sdk.Preview` | New project: SkiaSharp 4.148.0 wrapper; `JpegEncoder` (8-bit, quality 1–100); `WebPEncoder.EncodeSdr` (8-bit) + `EncodeHdr` (F16 VP8L for `-hdr`) |
+| `DngSharp.Dng.Sdk.Preview` | New project: SkiaSharp 4.148.0 wrapper; `JpegEncoder` (8-bit, quality 1–100); `WebPEncoder.EncodeSdr` (8-bit) + `EncodeHdr` (F16 VP8L for `-hdr`) |
 | `tools/build-libjxl.ps1` | Local dev script: configure (VS 17 2022, x64), build, install, copy `jxl.dll + jxl_cms.dll + brotli*.dll` to `runtimes/win-x64/native/` |
 | `.github/workflows/ci.yml` | `build-libjxl` job (win-x64 + linux-x64 + osx-arm64) with cmake cache + artifact upload; copies all companion DLLs on Windows |
-| `Dng.Validate` flags | `-jpeg <path>` · `-webp <path>` · `-hdr` (WebP HDR; errors if used with `-jpeg`). Updated help text. |
+| `DngSharp.Dng.Validate` flags | `-jpeg <path>` · `-webp <path>` · `-hdr` (WebP HDR; errors if used with `-jpeg`). Updated help text. |
 
 **Verified:** all 6 `images/IMG_*-HDR.dng` (iPhone ProRAW, 6000×4000, JXL LinearRaw) → 209 KB JPEG + 52 KB WebP each. 336/336 tests pass.
 
@@ -74,7 +74,7 @@ New in this milestone:
 | Native `-v` goldens captured for 14/14 samples | ✅ |
 | `GoldenVerboseDiffTests` — byte order, BigTIFF, IFD 0 offset/entry count/tag set | ✅ (14/14 pass) |
 | `GoldenRoundTripDiffTests` — managed `-dng` round-trip preserves top-level IFD shape | ✅ (14/14 pass, including SubIFDs) |
-| `Dng.Sdk.Benchmarks` + BDN baseline (`docs/perf/phase10-baseline.md`) | ✅ (parse-only <400 μs) |
+| `DngSharp.Dng.Sdk.Benchmarks` + BDN baseline (`docs/perf/phase10-baseline.md`) | ✅ (parse-only <400 μs) |
 | AOT publish CI on win-x64 + linux-x64 + osx-arm64 | ✅ |
 | **Milestone A: `-jpeg`/`-webp`/`-hdr` on iPhone HDR ProRAW DNGs** | ✅ (6/6 images; JXL fully wired) |
 | Stage-1/2/3 pixel diff (bit-exact int / ULP-bounded float) | ⏸ blocked — demosaic pending |
@@ -96,7 +96,7 @@ Then:
 |---|---|---|
 | `demosaic-bilinear` | Bilinear Bayer demosaic kernel (RGGB/GRBG/BGGR/GBRG) | `mosaic-info-usage` |
 | `bayer-golden-diff` | Stage-3 pixel diff vs native `dng_validate -3` for Bayer samples | `demosaic-bilinear` |
-| `stage-tif-cli-flags` | `-1/-2/-3 <file.tif>` dump flags in `Dng.Validate` | `demosaic-bilinear` |
+| `stage-tif-cli-flags` | `-1/-2/-3 <file.tif>` dump flags in `DngSharp.Dng.Validate` | `demosaic-bilinear` |
 | `golden-stage-diff` | Stage-1/2/3 TIFF pixel diff in xUnit test suite | `demosaic-bilinear` |
 
 ## Milestone C — full camera colour pipeline
@@ -114,7 +114,7 @@ Then:
 |---|---|---|
 | `camera-matrix-full-wiring` | `FM × D × inv(AB × CC)` in Stage3Renderer (identity today) | `asshot-neutral-cct-solver` |
 | `profile-tone-curve-wire` | Read ProfileToneCurve from IFD → HdrToneMapper | `camera-matrix-full-wiring` |
-| `output-color-space-flags` | `-cs1`…`-csP3`/`-cs2020` in `Dng.Validate` | `camera-matrix-full-wiring` |
+| `output-color-space-flags` | `-cs1`…`-csP3`/`-cs2020` in `DngSharp.Dng.Validate` | `camera-matrix-full-wiring` |
 | `simd-kernels` | `Vector256<float>` MAD / 3×3 matrix / LUT-gather kernels | `camera-matrix-full-wiring` + `linearization-full` |
 | `bench-simd-compare` | BDN SIMD vs scalar delta → `docs/perf/phase10-simd.md` | `simd-kernels` |
 
@@ -176,9 +176,9 @@ Unchanged plus new additions:
 ```powershell
 dotnet build Dng.slnx -c Release                                     # 0 warnings, 0 errors
 dotnet test  Dng.slnx -c Release                                     # 296/296 passing
-dotnet run --project src\Dng.Validate  -c Release -- <file.dng>      # CLI (parity subset)
-dotnet run --project tests\Dng.Sdk.Benchmarks -c Release -- --list flat
-dotnet run --project tests\Dng.Sdk.Benchmarks -c Release -- --filter *
+dotnet run --project src\DngSharp.Dng.Validate  -c Release -- <file.dng>      # CLI (parity subset)
+dotnet run --project tests\DngSharp.Dng.Sdk.Benchmarks -c Release -- --list flat
+dotnet run --project tests\DngSharp.Dng.Sdk.Benchmarks -c Release -- --filter *
 pwsh tests\golden\capture.ps1 -VerboseOnly                           # refresh native -v goldens
 ```
 
@@ -206,14 +206,14 @@ pwsh tests\golden\capture.ps1 -VerboseOnly                           # refresh n
 | Native `-v` goldens captured for 14/14 samples | ✅ |
 | `GoldenVerboseDiffTests` — byte order, BigTIFF, IFD 0 offset/entry count/tag set | ✅ (14/14 pass) |
 | `GoldenRoundTripDiffTests` — managed `-dng` round-trip preserves top-level IFD shape | ✅ (14/14 pass, including SubIFDs) |
-| `Dng.Sdk.Benchmarks` project scaffold + BDN switcher | ✅ |
+| `DngSharp.Dng.Sdk.Benchmarks` project scaffold + BDN switcher | ✅ |
 | `ContainerParseBenchmarks` — parse-only baseline over 4 representative samples | ✅ |
 | BDN baseline numbers recorded (`docs/perf/phase10-baseline.md`) | ✅ (parse-only <400 μs; parse is not the bottleneck) |
 | AOT publish CI on win-x64 + linux-x64 + osx-arm64 with sample smoke-run | ✅ |
 | Stage-1/2/3 pixel diff (bit-exact int / ULP-bounded float) | ✅ (33/33 pass — `GoldenStagePixelDiffTests`, samples 04–14) |
 | `Vector256<float>` / `Vector512<float>`-equivalent kernels for MAD, 3×3 matrix | ✅ (`Vector<float>` fast paths in `Stage2Builder`/`Stage3Renderer`, scalar fallback preserved) |
 | Compare SIMD vs scalar (`docs/perf/phase10-simd.md`) | ✅ (2.77× linearization, 1.56× matrix transform) |
-| Proxy DNG + lossy/lossless JXL re-encode golden diffs | ⏸ blocked — `-proxy`/`-lossyMosaicJXL`/`-losslessJXL` are unimplemented in `Dng.Validate` (help text only); no JXL encoder exists yet (`Dng.Sdk.Jxl` is decode-only). Needs a new feature effort before it can be golden-diffed. |
+| Proxy DNG + lossy/lossless JXL re-encode golden diffs | ⏸ blocked — `-proxy`/`-lossyMosaicJXL`/`-losslessJXL` are unimplemented in `DngSharp.Dng.Validate` (help text only); no JXL encoder exists yet (`DngSharp.Dng.Sdk.Jxl` is decode-only). Needs a new feature effort before it can be golden-diffed. |
 | Regenerate stage-1/2/3, rendered, and `-dng` goldens (opt-in; slow) | ⬜ opt-in (`tests/golden/capture.ps1` without `-VerboseOnly`) |
 
 ## Golden harness

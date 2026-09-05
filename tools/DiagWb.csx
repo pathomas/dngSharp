@@ -1,7 +1,7 @@
-using Dng.Sdk.Imaging.Profile;
-using Dng.Sdk.IO;
-using Dng.Sdk.Container;
-using Dng.Sdk.Render;
+using DngSharp.Dng.Sdk.Imaging.Profile;
+using DngSharp.Dng.Sdk.IO;
+using DngSharp.Dng.Sdk.Container;
+using DngSharp.Dng.Sdk.Render;
 
 var dng = @"D:\git\dng\images\IMG_3353-HDR.dng";
 using var stream = DngFileStream.OpenRead(dng);
@@ -9,7 +9,7 @@ var container = DngContainer.Parse(stream);
 
 var sharedIfd = container.TopLevelIfds[0];
 bool be = container.Header.BigEndian;
-var shared = new Dng.Sdk.Metadata.DngShared();
+var shared = new DngSharp.Dng.Sdk.Metadata.DngShared();
 var profile = CameraProfileReader.Read(stream, sharedIfd, be, shared);
 
 Console.WriteLine($"AsShotNeutral: {shared.AsShotNeutral?[0]:F4} {shared.AsShotNeutral?[1]:F4} {shared.AsShotNeutral?[2]:F4}");

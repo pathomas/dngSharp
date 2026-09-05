@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- SkiaSharp uses native code — disable AOT/trim for this project
+         until native-interop marshaling is annotated upstream. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+
+    <!-- Not packed on its own; bundled into the single DngSharp.Dng.Sdk
+         nupkg by the DngSharp.Dng.Sdk.Package meta project. -->
+    <IsPackable>false</IsPackable>
+    <Description>SkiaSharp-based preview rendering (JPEG/WebP encoding) for DngSharp.Dng.Sdk.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core SkiaSharp + native assets for all three supported RIDs. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
+    <PackageReference Include="SkiaSharp.NativeAssets.macOS" />
+  </ItemGroup>
+
+</Project>

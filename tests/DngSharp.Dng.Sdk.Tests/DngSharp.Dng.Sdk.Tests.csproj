@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- Used to decode rendered JPEG/WebP fixtures back to pixels for
+         assertions in TestImages/*.cs (synthetic-image regression tests). -->
+    <PackageReference Include="SkiaSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Validate\DngSharp.Dng.Validate.csproj" />
+  </ItemGroup>
+
+</Project>
