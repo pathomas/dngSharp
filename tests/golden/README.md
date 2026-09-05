@@ -66,14 +66,14 @@ dotnet run --project tools/SyntheticImageGenerator -c Release -- --golden-opcode
 ```
 
 `tools/SyntheticImageGenerator/Program.cs`'s `WriteGoldenOpcodeFixtures()` builds
-the DNG using `tests/Dng.Sdk.Tests/TestImages/OpcodeListTestBuilder.cs`, which
+the DNG using `tests/DngSharp.Dng.Sdk.Tests/TestImages/OpcodeListTestBuilder.cs`, which
 encodes an arbitrary opcode-list byte blob (`Build(params Entry[])`) plus a
 `BuildFixVignetteRadialBody(...)` helper for that specific opcode's wire
 format. To add coverage for `WarpFisheye`, `WarpRectilinear2`, or `GainMap`,
 add a matching `Build<Opcode>Body(...)` helper, extend
 `WriteGoldenOpcodeFixtures()` to emit a new `tests/golden/16_synthetic_.../`
 fixture, capture its native output the same way, and add a test in
-`tests/Dng.Sdk.Tests/Golden/GoldenSyntheticOpcodeDiffTests.cs` following
+`tests/DngSharp.Dng.Sdk.Tests/Golden/GoldenSyntheticOpcodeDiffTests.cs` following
 `Stage2_fixvignetteradial_matches_native()` (run the opcode through whichever
 applier stage the opcode lives in — List2 for Stage 2, List3 for Stage 3 —
 and diff against the captured `.tif`).

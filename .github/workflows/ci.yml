@@ -59,14 +59,14 @@ jobs:
           name: libjxl-${{ matrix.rid }}
           path: libjxl-native
 
-      # Place libjxl in the Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
+      # Place libjxl in the DngSharp.Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
       # so the <None Include="runtimes/**"> glob in the .csproj copies it to
-      # every output directory that references Dng.Sdk.Jxl.
+      # every output directory that references DngSharp.Dng.Sdk.Jxl.
       - name: Place libjxl runtime asset
         shell: bash
         run: |
-          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
-          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+          mkdir -p src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
 
       - name: Restore
         run: dotnet restore Dng.slnx
@@ -86,9 +86,9 @@ jobs:
       - id: set
         shell: bash
         run: |
-          include='[{"os":"windows-latest","rid":"win-x64","exe":"Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"Dng.Validate","libname":"libjxl.so"}]'
+          include='[{"os":"windows-latest","rid":"win-x64","exe":"DngSharp.Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"DngSharp.Dng.Validate","libname":"libjxl.so"}]'
           if [ "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_macos == 'true' }}" = "true" ]; then
-            include='[{"os":"windows-latest","rid":"win-x64","exe":"Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"Dng.Validate","libname":"libjxl.so"},{"os":"macos-latest","rid":"osx-arm64","exe":"Dng.Validate","libname":"libjxl.dylib"}]'
+            include='[{"os":"windows-latest","rid":"win-x64","exe":"DngSharp.Dng.Validate.exe","libname":"jxl.dll"},{"os":"ubuntu-latest","rid":"linux-x64","exe":"DngSharp.Dng.Validate","libname":"libjxl.so"},{"os":"macos-latest","rid":"osx-arm64","exe":"DngSharp.Dng.Validate","libname":"libjxl.dylib"}]'
           fi
           echo "matrix={\"include\":$include}" >> "$GITHUB_OUTPUT"
 
@@ -115,12 +115,12 @@ jobs:
       - name: Place libjxl runtime asset
         shell: bash
         run: |
-          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
-          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+          mkdir -p src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
 
-      - name: AOT publish Dng.Validate (${{ matrix.rid }})
+      - name: AOT publish DngSharp.Dng.Validate (${{ matrix.rid }})
         run: >
-          dotnet publish src/Dng.Validate/Dng.Validate.csproj
+          dotnet publish src/DngSharp.Dng.Validate/DngSharp.Dng.Validate.csproj
           -c Release
           -r ${{ matrix.rid }}
           --self-contained
@@ -132,7 +132,7 @@ jobs:
       - name: Smoke-run AOT binary against a sample DNG
         shell: bash
         run: |
-          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          out_dir=$(find src/DngSharp.Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
           exe="$out_dir/${{ matrix.exe }}"
           if [ ! -f "$exe" ]; then echo "AOT binary not found at $exe" >&2; exit 1; fi
           echo "Running $exe"

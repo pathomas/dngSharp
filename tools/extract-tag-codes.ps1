@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Regenerates src/Dng.Sdk/Tiff/DngTagCode.cs from
+  Regenerates src/DngSharp.Dng.Sdk/Tiff/DngTagCode.cs from
   dng_sdk_1_7_1/dng_sdk/source/dng_tag_codes.h.
 
   Run this after the vendored DNG SDK is upgraded to a newer spec revision.
@@ -13,7 +13,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $headerPath = Join-Path $repoRoot 'dng_sdk_1_7_1\dng_sdk\source\dng_tag_codes.h'
-$outPath = Join-Path $repoRoot 'src\Dng.Sdk\Tiff\DngTagCode.cs'
+$outPath = Join-Path $repoRoot 'src\DngSharp.Dng.Sdk\Tiff\DngTagCode.cs'
 
 if (-not (Test-Path $headerPath)) {
     throw "Header not found: $headerPath"
@@ -36,7 +36,7 @@ $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('// dng_sdk_1_7_1/dng_sdk/source/dng_tag_codes.h.')
 [void]$sb.AppendLine('// Do not edit by hand. Re-run the script after vendored-SDK upgrades.')
 [void]$sb.AppendLine('')
-[void]$sb.AppendLine('namespace Dng.Sdk.Tiff;')
+[void]$sb.AppendLine('namespace DngSharp.Dng.Sdk.Tiff;')
 [void]$sb.AppendLine('')
 [void]$sb.AppendLine('/// <summary>')
 [void]$sb.AppendLine('/// TIFF, EXIF, and DNG-extension tag codes. Mirrors tcXxx constants in dng_tag_codes.h.')

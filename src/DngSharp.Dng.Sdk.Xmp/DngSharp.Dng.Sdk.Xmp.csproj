@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Not packed on its own; bundled into the single DngSharp.Dng.Sdk
+         nupkg by the DngSharp.Dng.Sdk.Package meta project. -->
+    <IsPackable>false</IsPackable>
+    <Description>XMP metadata adapter for DngSharp.Dng.Sdk.</Description>
+  </PropertyGroup>
+
+</Project>

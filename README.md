@@ -2,8 +2,8 @@
 
 This repository contains two parallel codebases:
 
-1. **The .NET 10 port** (`src/Dng.Sdk*`, `src/Dng.Validate`,
-   `tests/Dng.Sdk.Tests`) — an in-progress, from-scratch C# rewrite of the
+1. **The .NET 10 port** (`src/DngSharp.Dng.Sdk*`, `src/DngSharp.Dng.Validate`,
+   `tests/DngSharp.Dng.Sdk.Tests`) — an in-progress, from-scratch C# rewrite of the
    Adobe DNG SDK 1.7.1: TIFF/DNG container parsing, the linearization →
    demosaic → color-render pipeline, JPEG/JPEG XL codec adapters, and a CLI
    (`dng_validate`-equivalent) that renders DNGs to JPEG/WebP.
@@ -37,14 +37,14 @@ Dng.slnx                     .NET 10 SDK-style solution
 Directory.Build.props        net10.0, nullable on, warnings-as-errors, AOT-friendly
 Directory.Build.targets      test-project overrides
 Directory.Packages.props     Central Package Management
-src/Dng.Sdk/                 core managed port (container/TIFF parsing, math,
+src/DngSharp.Dng.Sdk/                 core managed port (container/TIFF parsing, math,
                               color science, negative + render pipeline, codecs)
-src/Dng.Sdk.Jpeg/            JPEG codec adapter
-src/Dng.Sdk.Jxl/             JPEG XL codec adapter (P/Invoke to libjxl)
-src/Dng.Sdk.Xmp/             XMP metadata adapter
-src/Dng.Sdk.Preview/         JPEG/WebP preview rendering (SkiaSharp-backed)
-src/Dng.Validate/            CLI mirroring dng_validate.cpp
-tests/Dng.Sdk.Tests/         xUnit test suite
+src/DngSharp.Dng.Sdk.Jpeg/            JPEG codec adapter
+src/DngSharp.Dng.Sdk.Jxl/             JPEG XL codec adapter (P/Invoke to libjxl)
+src/DngSharp.Dng.Sdk.Xmp/             XMP metadata adapter
+src/DngSharp.Dng.Sdk.Preview/         JPEG/WebP preview rendering (SkiaSharp-backed)
+src/DngSharp.Dng.Validate/            CLI mirroring dng_validate.cpp
+tests/DngSharp.Dng.Sdk.Tests/         xUnit test suite
 tests/golden/                golden-file capture + fixtures for diffing against
                               the native dng_validate reference
 tools/                       tag-code extraction, libjxl build script, etc.
@@ -57,16 +57,16 @@ dng_sdk_1_7_1/                vendored Adobe DNG SDK 1.7.1 (not tracked in git)
 ```powershell
 dotnet build Dng.slnx -c Release          # 0 warnings, 0 errors
 dotnet test  Dng.slnx -c Release          # xUnit suite, 366/366 passing
-dotnet run --project src\Dng.Validate -c Release -- <file.dng>                      # CLI summary
-dotnet run --project src\Dng.Validate -c Release -- -jpeg out.jpg <file.dng>        # render to JPEG
-dotnet run --project src\Dng.Validate -c Release -- -webp out.webp <file.dng>       # render to WebP
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- <file.dng>                      # CLI summary
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- -jpeg out.jpg <file.dng>        # render to JPEG
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- -webp out.webp <file.dng>       # render to WebP
 ```
 
 Native AOT publish smoke test (requires the platform's native toolchain for
 the link step; CI runs this on Windows, Linux, and macOS):
 
 ```powershell
-dotnet publish src/Dng.Validate -c Release -r win-x64 --self-contained -p:PublishAot=true
+dotnet publish src/DngSharp.Dng.Validate -c Release -r win-x64 --self-contained -p:PublishAot=true
 ```
 
 ## Vendored native SDK (not in git)
