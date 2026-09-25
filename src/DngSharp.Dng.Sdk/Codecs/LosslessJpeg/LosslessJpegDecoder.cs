@@ -116,6 +116,18 @@ public sealed class LosslessJpegDecoder : IRawDecoder
         Span<int> prevRow = new int[width * components];
         Span<int> curRow = new int[width * components];
 
+        // The scan's (width × components) geometry need not match the
+        // destination's (W × Planes): DNG writers routinely encode a
+        // single-plane tile as width/2 × 2 components (or a 3-plane tile as
+        // width×3 × 1 component). Per dng_lossless_jpeg.cpp, samples are
+        // laid down in flat raster order — sample k of the scan lands at
+        // sample k of the destination tile (row-major, planes innermost).
+        int dstW = (int)destination.Area.W;
+        int dstP = (int)destination.Planes;
+        int samplesPerDstRow = dstW * dstP;
+        int samplesPerScanRow = width * components;
+        bool rowsAlign = samplesPerScanRow == samplesPerDstRow;
+
         for (int row = 0; row < height; row++)
         {
             for (int col = 0; col < width; col++)
@@ -142,9 +154,22 @@ public sealed class LosslessJpegDecoder : IRawDecoder
                     int sample = (prediction + diff) & ((1 << precision) - 1);
                     curRow[col * components + c] = sample;
 
-                    // Store.
+                    // Store at flat raster sample index.
+                    int dr, dc, dp;
+                    if (rowsAlign)
+                    {
+                        int idx = col * components + c;
+                        dr = row; dc = idx / dstP; dp = idx % dstP;
+                    }
+                    else
+                    {
+                        long k = ((long)row * width + col) * components + c;
+                        dr = (int)(k / samplesPerDstRow);
+                        int rem = (int)(k % samplesPerDstRow);
+                        dc = rem / dstP; dp = rem % dstP;
+                    }
                     long dstOff = destination.OffsetBytes(
-                        destination.Area.T + row, destination.Area.L + col, (uint)c);
+                        destination.Area.T + dr, destination.Area.L + dc, (uint)dp);
                     if (destination.PixelSize == 1)
                         dst[(int)dstOff] = (byte)sample;
                     else

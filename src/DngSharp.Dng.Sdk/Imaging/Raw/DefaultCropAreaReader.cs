@@ -26,12 +26,19 @@ public static class DefaultCropAreaReader
 {
     /// <summary>
     /// Read <c>DefaultCropOrigin</c>/<c>DefaultCropSize</c> from <paramref name="ifd"/>,
-    /// or <see langword="null"/> if either tag is absent or malformed. The
-    /// result is clamped to <paramref name="imageBounds"/> (when non-empty),
-    /// mirroring the slide-back-into-bounds logic in
-    /// <c>dng_negative::DefaultCropArea</c>.
+    /// or <see langword="null"/> if either tag is absent or malformed.
+    ///
+    /// <para>Per the DNG spec, <c>DefaultCropOrigin</c> is expressed
+    /// <b>relative to the top-left corner of <c>ActiveArea</c></b>, so
+    /// <paramref name="activeArea"/> (the active area, or the full image
+    /// bounds when the tag is absent) is both the coordinate origin and the
+    /// clamp rectangle. In the C++ SDK this is implicit: stage 2/3 images
+    /// are already cropped to the active area, so
+    /// <c>dng_negative::DefaultCropArea</c> operates in that space. The
+    /// result is returned in raw-image coordinates and slid back into
+    /// <paramref name="activeArea"/> when rounding pushes it off the edge.</para>
     /// </summary>
-    public static DngRect? ReadDefaultCropArea(DngStream stream, TiffIfd ifd, bool bigEndian, DngRect imageBounds)
+    public static DngRect? ReadDefaultCropArea(DngStream stream, TiffIfd ifd, bool bigEndian, DngRect activeArea)
     {
         var originEntry = ifd.Find(DngTagCode.DefaultCropOrigin);
         var sizeEntry = ifd.Find(DngTagCode.DefaultCropSize);
@@ -44,28 +51,28 @@ public static class DefaultCropAreaReader
         double originH = origin[0], originV = origin[1];
         double sizeH = size[0], sizeV = size[1];
 
-        int left = (int)System.Math.Round(originH);
-        int top = (int)System.Math.Round(originV);
+        int left = activeArea.L + (int)System.Math.Round(originH);
+        int top = activeArea.T + (int)System.Math.Round(originV);
         int right = left + (int)System.Math.Round(sizeH);
         int bottom = top + (int)System.Math.Round(sizeV);
 
-        if (!imageBounds.IsEmpty)
+        if (!activeArea.IsEmpty)
         {
-            // Slide the crop back into the image bounds instead of letting it
+            // Slide the crop back into the active area instead of letting it
             // run off the edge (mirrors dng_negative::DefaultCropArea).
-            if (right > imageBounds.R)
+            if (right > activeArea.R)
             {
-                left -= right - imageBounds.R;
-                right = imageBounds.R;
+                left -= right - activeArea.R;
+                right = activeArea.R;
             }
-            left = System.Math.Max(imageBounds.L, left);
+            left = System.Math.Max(activeArea.L, left);
 
-            if (bottom > imageBounds.B)
+            if (bottom > activeArea.B)
             {
-                top -= bottom - imageBounds.B;
-                bottom = imageBounds.B;
+                top -= bottom - activeArea.B;
+                bottom = activeArea.B;
             }
-            top = System.Math.Max(imageBounds.T, top);
+            top = System.Math.Max(activeArea.T, top);
         }
 
         if (right <= left || bottom <= top) return null;
