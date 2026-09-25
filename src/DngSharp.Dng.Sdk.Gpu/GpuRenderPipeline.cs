@@ -41,7 +41,7 @@ public sealed record GpuRenderParams(
 /// OpcodeList1–3 are empty (or run them on the CPU between the per-stage
 /// helpers) — the resident path exists for the common no-opcode case.</para>
 ///
-/// <para>Supported input: <see cref="PixelType.UInt16"/> Stage 1 with one
+/// <para>Supported input: <see cref="PixelType.UInt16"/> or <see cref="PixelType.Float16"/> Stage 1 with one
 /// plane (2×2 Bayer CFA) or three planes (LinearRaw/RGB passthrough).
 /// Instances are not thread-safe; kernels are compiled once per instance.</para>
 /// </summary>
@@ -58,6 +58,13 @@ public sealed class GpuRenderPipeline : IDisposable
     private readonly Action<Index1D, ArrayView<float>, ArrayView<byte>, PlanarParams> _gamma;
 
     public GpuDevice Device { get; }
+
+    /// <summary>
+    /// Peak device memory (bytes) held simultaneously by the most recent
+    /// <see cref="RenderToRgb8"/> call — Stage 2 + Stage 3 + RGB float + RGB8
+    /// buffers. Diagnostic only; intended for benchmarks and sizing.
+    /// </summary>
+    public long LastPeakDeviceBytes { get; private set; }
 
     public GpuRenderPipeline(GpuDevice device)
     {
@@ -98,19 +105,42 @@ public sealed class GpuRenderPipeline : IDisposable
         int w = (int)stage1.Bounds.W, h = (int)stage1.Bounds.H;
         int cw = (int)cropRect.W, ch = (int)cropRect.H;
 
-        using var stage2 = LinearizeToDevice(stage1, lin);
-        using var stage3 = DemosaicToDevice(stage2.View, w, h, (int)stage1.Planes, photometric, mosaic);
-        using var rgb = _acc.Allocate1D<float>((long)cw * ch * 3);
-        using var rgb8 = _acc.Allocate1D<byte>((long)cw * ch * 3);
+        // Peak residency is minimised: for LinearRaw/RGB input Stage 3 *is*
+        // Stage 2 (no copy), and for CFA input Stage 2 is released as soon as
+        // the demosaic has consumed it, before the RGB buffers are allocated.
+        var stage2 = LinearizeToDevice(stage1, lin);
+        MemoryBuffer1D<float, Stride1D.Dense> stage3;
+        long peak;
+        if (photometric is Photometric.LinearRaw or Photometric.Rgb)
+        {
+            if (stage1.Planes != 3)
+                throw new NotSupportedException($"GpuRenderPipeline: {photometric} passthrough needs 3 planes (got {stage1.Planes}).");
+            stage3 = stage2;
+            peak = stage3.LengthInBytes;
+        }
+        else
+        {
+            stage3 = DemosaicToDevice(stage2.View, w, h, (int)stage1.Planes, photometric, mosaic);
+            peak = stage2.LengthInBytes + stage3.LengthInBytes;
+            _acc.Synchronize();
+            stage2.Dispose();
+        }
 
-        RenderOnDevice(stage3.View, w, h, cropRect.L - stage1.Bounds.L, cropRect.T - stage1.Bounds.T, cw, ch, render, rgb.View);
-        if (render.ToneMapToSdr) ToneMapOnDevice(rgb.View, cw * ch, render.ToneCurve);
-        _gamma(cw * ch, rgb.View, rgb8.View, new PlanarParams { PixelCount = cw * ch });
-        _acc.Synchronize();
+        using (stage3)
+        {
+            using var rgb = _acc.Allocate1D<float>((long)cw * ch * 3);
+            using var rgb8 = _acc.Allocate1D<byte>((long)cw * ch * 3);
+            LastPeakDeviceBytes = System.Math.Max(peak, stage3.LengthInBytes + rgb.LengthInBytes + rgb8.LengthInBytes);
 
-        var result = new byte[cw * ch * 3];
-        rgb8.View.CopyToCPU(result);
-        return result;
+            RenderOnDevice(stage3.View, w, h, cropRect.L - stage1.Bounds.L, cropRect.T - stage1.Bounds.T, cw, ch, render, rgb.View);
+            if (render.ToneMapToSdr) ToneMapOnDevice(rgb.View, cw * ch, render.ToneCurve);
+            _gamma(cw * ch, rgb.View, rgb8.View, new PlanarParams { PixelCount = cw * ch });
+            _acc.Synchronize();
+
+            var result = new byte[cw * ch * 3];
+            rgb8.View.CopyToCPU(result);
+            return result;
+        }
     }
 
     // ── Per-stage helpers (host round-trip each) ──────────────────────────────
@@ -195,8 +225,8 @@ public sealed class GpuRenderPipeline : IDisposable
     private MemoryBuffer1D<float, Stride1D.Dense> LinearizeToDevice(SimpleImage stage1, LinearizationInfo lin)
     {
         ArgumentNullException.ThrowIfNull(lin);
-        if (stage1.PixelType != PixelType.UInt16)
-            throw new NotSupportedException($"GpuRenderPipeline: Stage 1 must be UInt16 (got {stage1.PixelType}).");
+        if (stage1.PixelType is not (PixelType.UInt16 or PixelType.Float16))
+            throw new NotSupportedException($"GpuRenderPipeline: Stage 1 must be UInt16 or Float16 (got {stage1.PixelType}).");
         if (lin.BlackLevel.Length == 0 || lin.WhiteLevel.Length == 0)
             throw new ArgumentException("BlackLevel and WhiteLevel must be non-empty.", nameof(lin));
 
@@ -239,6 +269,7 @@ public sealed class GpuRenderPipeline : IDisposable
                 RepeatRows = (int)lin.BlackLevelRepeatDim.Rows,
                 RepeatCols = (int)lin.BlackLevelRepeatDim.Cols,
                 HasRepeat = hasRepeat ? 1 : 0,
+                IsHalf = stage1.PixelType == PixelType.Float16 ? 1 : 0,
             });
 
         // The stream is in-order, so the temporaries can be released as soon

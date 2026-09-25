@@ -91,6 +91,31 @@ internal static class Synthetic
         return img;
     }
 
+    /// <summary>Three-plane Float16 LinearRaw (as Lightroom HDR DNG exports), values in [-0.05, 1.5] incl. subnormals.</summary>
+    public static SimpleImage Float16LinearRawStage1(int width = Width, int height = Height)
+    {
+        var img = new SimpleImage(new DngRect(0, 0, height, width), 3, PixelType.Float16);
+        var px = img.Buffer.AsTypedSpan<Half>();
+        int n = width * height;
+        for (int r = 0; r < height; r++)
+        {
+            for (int c = 0; c < width; c++)
+            {
+                int i = r * width + c;
+                px[i] = (Half)(1.5 * c / width - 0.05);
+                px[i + n] = (Half)(1.2 * r / height);
+                px[i + 2 * n] = (Half)(((r * c) & 1023) * 1e-6);   // tiny values → binary16 subnormals
+            }
+        }
+        return img;
+    }
+
+    public static LinearizationInfo Float16Linearization() => new()
+    {
+        BlackLevel = [0, 0, 0],
+        WhiteLevel = [1, 1, 1],
+    };
+
     public static LinearizationInfo BayerLinearization(bool withLut = false, bool withDeltas = false)
     {
         var lin = new LinearizationInfo

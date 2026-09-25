@@ -88,21 +88,23 @@ guard test fails if `DNGSHARP_GPU_BACKEND=cuda` silently falls back.
 
 ## Memory budget
 
-For a 6288×4056 Bayer frame the resident path holds, all at once:
+For a 6288×4056 Bayer frame the resident path allocates:
 
-| Buffer | Type | Size |
-|---|---|---:|
-| Stage 1 | ushort ×1 | 51 MB |
-| Stage 2 | float ×1 | 102 MB |
-| Stage 3 | float ×3 | 306 MB |
-| Rendered RGB (crop) | float ×3 | ≤ 306 MB |
-| RGB8 | byte ×3 | 76 MB |
-| LUT / HueSatMap / curve | float | < 1 MB |
-| | | **≈ 840 MB** |
+| Buffer | Type | Size | Lifetime |
+|---|---|---:|---|
+| Stage 1 | ushort ×1 | 51 MB | freed after linearize |
+| Stage 2 | float ×1 | 102 MB | freed after demosaic |
+| Stage 3 | float ×3 | 306 MB | until RGB8 download |
+| Rendered RGB (crop) | float ×3 | ≤ 306 MB | until RGB8 download |
+| RGB8 | byte ×3 | 76 MB | until download |
+| LUT / HueSatMap / curve | float | < 1 MB | |
 
-Fits a 2 GB card with headroom. Freeing Stage 1 and Stage 2 before the
-render kernel would cut peak to ≈690 MB; not done yet because it doesn't
-matter on any card ≥ 2 GB.
+Peak residency is `max(Stage 2 + Stage 3, Stage 3 + RGB + RGB8)` ≈ **690 MB**
+(was 840 MB before Stage 2 was released early). For three-plane LinearRaw /
+Float16 input Stage 3 aliases Stage 2 with no copy, so the same ≈690 MB
+applies. `GpuRenderPipeline.LastPeakDeviceBytes` reports the figure for the
+last call. A 2 GB card handles ≈25 MP frames; the 50 MP HDR panoramas in the
+corpus run (`corpus-2026-09-24.md`) still exceed it and need a banded render.
 
 ## What is and isn't ported
 

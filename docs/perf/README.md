@@ -46,6 +46,13 @@ what a user of the CLI sees on real files:
   `images/*.dng`, interleaving revisions per run so thermal throttling hits
   them equally. Emits a Markdown table with the speed-up relative to the
   first revision. Results: `phase10-end-to-end.md`.
+- `dotnet run -c Release --project tests/DngSharp.Dng.Sdk.Benchmarks -- corpus
+  [--backend cuda|opencl|cpu|auto] [--out report.md] [--cpu-only|--gpu-only]`
+  converts **every** `images/*.dng` to JPEG once on the CPU path and once via
+  `GpuRenderPipeline.RenderToRgb8`, reporting per-file decode/render/encode
+  time, managed allocations, peak working set and peak device memory, with a
+  CPU-vs-GPU summary. Not BenchmarkDotNet — one pass over a large corpus is
+  the measurement. Results: `corpus-2026-09-24.md`.
 
 ## Results
 
@@ -54,6 +61,9 @@ what a user of the CLI sees on real files:
   the ranked list of remaining levers.
 - `phase10-parallel.md`, `phase10-simd.md`, `phase10-soa.md` — per-kernel
   microbenchmarks behind each optimisation.
+- `corpus-2026-09-24.md` — 55-file DNG → JPEG corpus, CPU vs GPU, times and
+  memory per file; `corpus-2026-09-24-run1-unthrottled.md` is the same corpus
+  before the laptop GPU hit its thermal clock cap.
 - `phase10-gpu.md` — opt-in ILGPU back-end (`feature/ilgpu`): CPU vs GPU
   per stage and resident, equivalence tolerances, memory budget, what is
   not ported (opcodes, codecs).

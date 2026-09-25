@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
     <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" />
     <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Gpu\DngSharp.Dng.Sdk.Gpu.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Preview\DngSharp.Dng.Sdk.Preview.csproj" />
   </ItemGroup>
 
   <ItemGroup>

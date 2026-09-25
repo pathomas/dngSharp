@@ -13,6 +13,8 @@ public struct LinearizeParams
     public int RepeatCols;
     /// <summary>1 when <see cref="RepeatRows"/>/<see cref="RepeatCols"/> tile a black-level pattern; 0 → per-plane black.</summary>
     public int HasRepeat;
+    /// <summary>1 when the <c>ushort</c> source holds IEEE binary16 bit patterns (<c>PixelType.Float16</c>); 0 → integer samples.</summary>
+    public int IsHalf;
 }
 
 /// <summary>Per-launch parameters for <see cref="GpuKernels.Demosaic"/>.</summary>
@@ -87,7 +89,7 @@ public static class GpuKernels
         int row = rem / p.Width;
         int col = rem - row * p.Width;
 
-        float sample = src[i];
+        float sample = p.IsHalf != 0 ? HalfToFloat(src[i]) : src[i];
         if (lut.Length > 0)
         {
             int idx = XMath.Clamp((int)sample, 0, (int)lut.Length - 1);
@@ -110,6 +112,22 @@ public static class GpuKernels
 
         float linear = (sample - black) * scales[plane];
         dst[i] = linear > 1f ? 1f : linear;
+    }
+
+    /// <summary>IEEE binary16 → float32 (handles subnormals, inf, NaN). ILGPU has no <c>System.Half</c> support.</summary>
+    private static float HalfToFloat(ushort h)
+    {
+        int sign = (h >> 15) & 1;
+        int exp = (h >> 10) & 0x1F;
+        int mant = h & 0x3FF;
+        float value;
+        if (exp == 0)
+            value = mant * (1f / 16777216f);                       // subnormal: mant × 2^-24
+        else if (exp == 31)
+            value = mant == 0 ? float.PositiveInfinity : float.NaN;
+        else
+            value = (1f + mant * (1f / 1024f)) * XMath.Exp2(exp - 15);
+        return sign != 0 ? -value : value;
     }
 
     // ── Stage 2 → Stage 3 ─────────────────────────────────────────────────────

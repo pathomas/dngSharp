@@ -55,6 +55,20 @@ public class GpuStageEquivalenceTests(GpuFixture gpu, ITestOutputHelper output) 
     }
 
     [Fact]
+    public void Linearize_matches_Stage2Builder_for_Float16_LinearRaw()
+    {
+        var stage1 = Synthetic.Float16LinearRawStage1();
+        var lin = Synthetic.Float16Linearization();
+
+        var cpu = Stage2Builder.Build(stage1, lin);
+        var dev = _gpu.Linearize(stage1, lin);
+
+        var (max, mean) = Diff.Floats(cpu, dev);
+        Log(nameof(Linearize_matches_Stage2Builder_for_Float16_LinearRaw), $"max {max:E2} mean {mean:E2}");
+        Assert.True(max < 1e-6, $"max {max:E2} mean {mean:E2}");
+    }
+
+    [Fact]
     public void Linearize_clips_above_one_and_preserves_negative()
     {
         var stage1 = new SimpleImage(new DngRect(0, 0, 2, 4), 1, PixelType.UInt16);
