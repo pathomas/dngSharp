@@ -24,9 +24,10 @@ public static class PixelKernels
 
     /// <summary>
     /// Copy from <paramref name="source"/> to <paramref name="destination"/>.
-    /// Areas, planes, and pixel types must match. Falls through to per-row
-    /// <c>Memory.CopyTo</c> when both buffers share an interleaved layout —
-    /// otherwise per-pixel copy via offsets.
+    /// Areas, planes, and pixel types must match; layouts may differ (this is
+    /// the interleaved ⇄ planar conversion point). Per plane, per row: a
+    /// single <c>CopyTo</c> when both rows are contiguous, otherwise a
+    /// strided typed copy.
     /// </summary>
     public static void Copy(PixelBuffer source, PixelBuffer destination)
     {
@@ -37,34 +38,72 @@ public static class PixelKernels
         if (source.Area != destination.Area)
             DngThrow.ProgramError($"Copy: area mismatch ({source.Area} -> {destination.Area})");
 
-        // Fast path: tightly packed interleaved buffers with matching layout.
-        bool fast = source.ColStep == destination.ColStep
-                 && source.PlaneStep == destination.PlaneStep
-                 && source.ColStep == source.Planes
-                 && source.PlaneStep == 1;
-        if (fast)
-        {
-            int rowBytes = (int)source.Area.W * source.PixelSize * (int)source.Planes;
-            int srcStride = (int)(source.RowStep * source.PixelSize);
-            int dstStride = (int)(destination.RowStep * destination.PixelSize);
-            var srcSpan = source.AsByteSpan();
-            var dstSpan = destination.AsByteSpan();
-            for (int r = 0; r < source.Area.H; r++)
-                srcSpan.Slice(r * srcStride, rowBytes).CopyTo(dstSpan.Slice(r * dstStride, rowBytes));
-            return;
-        }
+        if (source.Area.IsEmpty) return;
 
-        // Generic path: per-sample copy.
-        int pixelSize = source.PixelSize;
+        // Same view (e.g. WriteTile(GetTile(...))) — nothing to do.
+        if (source.Memory.Equals(destination.Memory)
+            && source.RowStep == destination.RowStep
+            && source.ColStep == destination.ColStep
+            && source.PlaneStep == destination.PlaneStep
+            && source.Plane == destination.Plane)
+            return;
+
+        switch (source.PixelSize)
+        {
+            case 1: CopyTyped<byte>(source, destination); break;
+            case 2: CopyTyped<ushort>(source, destination); break;
+            case 4: CopyTyped<uint>(source, destination); break;
+            case 8: CopyTyped<ulong>(source, destination); break;
+            default: DngThrow.ProgramError($"Copy: unsupported pixel size {source.PixelSize}"); break;
+        }
+    }
+
+    private static void CopyTyped<T>(PixelBuffer source, PixelBuffer destination) where T : unmanaged
+    {
+        var src = MemoryMarshal.Cast<byte, T>(source.AsByteSpan());
+        var dst = MemoryMarshal.Cast<byte, T>(destination.AsByteSpan());
+
+        int w = (int)source.Area.W;
+        int h = (int)source.Area.H;
+        int sCol = (int)source.ColStep;
+        int dCol = (int)destination.ColStep;
+
         for (uint p = 0; p < source.Planes; p++)
-            for (int row = source.Area.T; row < source.Area.B; row++)
-                for (int col = source.Area.L; col < source.Area.R; col++)
+        {
+            for (int r = 0; r < h; r++)
+            {
+                int row = source.Area.T + r;
+                int sOff = (int)(source.OffsetBytes(row, source.Area.L, p) / source.PixelSize);
+                int dOff = (int)(destination.OffsetBytes(row, destination.Area.L, p) / destination.PixelSize);
+
+                if (sCol == 1 && dCol == 1)
                 {
-                    long sOff = source.OffsetBytes(row, col, p);
-                    long dOff = destination.OffsetBytes(row, col, p);
-                    source.AsByteSpan().Slice((int)sOff, pixelSize)
-                          .CopyTo(destination.AsByteSpan().Slice((int)dOff, pixelSize));
+                    src.Slice(sOff, w).CopyTo(dst.Slice(dOff, w));
+                    continue;
                 }
+
+                var s = src.Slice(sOff, (w - 1) * sCol + 1);
+                var d = dst.Slice(dOff, (w - 1) * dCol + 1);
+                for (int c = 0; c < w; c++)
+                    d[c * dCol] = s[c * sCol];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Pack <paramref name="source"/> into a freshly allocated, tightly
+    /// packed <b>interleaved</b> byte array (row-major, planes adjacent) —
+    /// the on-disk "chunky" order expected by TIFF <c>PlanarConfiguration=1</c>
+    /// and by 8-bit RGB encoders. Works for any source layout.
+    /// </summary>
+    public static byte[] ToInterleavedBytes(PixelBuffer source)
+    {
+        long total = (long)source.Area.W * source.Area.H * source.Planes * source.PixelSize;
+        if (total > int.MaxValue)
+            DngThrow.Overflow($"ToInterleavedBytes: {total} bytes > int.MaxValue");
+        var bytes = new byte[total];
+        Copy(source, PixelBuffer.Interleaved(source.Area, source.Planes, source.PixelType, bytes));
+        return bytes;
     }
 
     /// <summary>
@@ -73,7 +112,29 @@ public static class PixelKernels
     public static void Fill<T>(PixelBuffer buffer, T value) where T : unmanaged
     {
         var span = buffer.AsTypedSpan<T>();
-        span.Fill(value);
+
+        // Whole-buffer views: one fill covers exactly the logical area.
+        long logical = (long)buffer.Area.W * buffer.Area.H * buffer.Planes;
+        if (span.Length == logical)
+        {
+            span.Fill(value);
+            return;
+        }
+
+        // Sub-views share the parent's memory: fill only the samples inside
+        // the view's area so neighbouring pixels aren't clobbered.
+        int w = (int)buffer.Area.W;
+        int colStep = (int)buffer.ColStep;
+        for (uint p = 0; p < buffer.Planes; p++)
+            for (int row = buffer.Area.T; row < buffer.Area.B; row++)
+            {
+                int off = (int)(buffer.OffsetBytes(row, buffer.Area.L, p) / buffer.PixelSize);
+                if (colStep == 1)
+                    span.Slice(off, w).Fill(value);
+                else
+                    for (int c = 0; c < w; c++)
+                        span[off + c * colStep] = value;
+            }
     }
 
     /// <summary>

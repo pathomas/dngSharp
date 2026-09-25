@@ -57,35 +57,38 @@ public static class RowColumnInterleave
         var dstTile = dst.GetTile(dst.Bounds);
 
         int pixelSize = srcTile.PixelSize;
-        int planes = (int)src.Planes;
-        int sampleBytes = pixelSize; // per-component byte size (PixelSize is per-component)
-        int pixelStrideBytes = sampleBytes * planes;
-
         var srcBytes = srcTile.AsByteSpan();
         var dstBytes = dstTile.AsByteSpan();
 
-        int srcRowStrideBytes = (int)(srcTile.RowStep * srcTile.PixelSize);
-        int dstRowStrideBytes = (int)(dstTile.RowStep * dstTile.PixelSize);
-
+        // Precompute the source row/col each destination row/col pulls from.
+        var srcRows = new int[h];
         for (int r = 0; r < h; r++)
         {
             int rField = r % rowFactor;
             int rBlockStart = rField * (h / rowFactor) + System.Math.Min(rField, h % rowFactor);
-            int srcRow = rBlockStart + r / rowFactor;
+            srcRows[r] = rBlockStart + r / rowFactor;
+        }
+        var srcCols = new int[w];
+        for (int c = 0; c < w; c++)
+        {
+            int cField = c % colFactor;
+            int cBlockStart = cField * (w / colFactor) + System.Math.Min(cField, w % colFactor);
+            srcCols[c] = cBlockStart + c / colFactor;
+        }
 
-            int dstRowOff = r * dstRowStrideBytes;
-            int srcRowOff = srcRow * srcRowStrideBytes;
-
-            for (int c = 0; c < w; c++)
+        for (uint p = 0; p < src.Planes; p++)
+        {
+            for (int r = 0; r < h; r++)
             {
-                int cField = c % colFactor;
-                int cBlockStart = cField * (w / colFactor) + System.Math.Min(cField, w % colFactor);
-                int srcCol = cBlockStart + c / colFactor;
-
-                int dstOff = dstRowOff + c * pixelStrideBytes;
-                int srcOff = srcRowOff + srcCol * pixelStrideBytes;
-
-                srcBytes.Slice(srcOff, pixelStrideBytes).CopyTo(dstBytes.Slice(dstOff, pixelStrideBytes));
+                long dstRow = dstTile.OffsetBytes(r, 0, p);
+                long srcRow = srcTile.OffsetBytes(srcRows[r], 0, p);
+                long sCol = srcTile.ColStep * pixelSize;
+                long dCol = dstTile.ColStep * pixelSize;
+                for (int c = 0; c < w; c++)
+                {
+                    srcBytes.Slice((int)(srcRow + srcCols[c] * sCol), pixelSize)
+                            .CopyTo(dstBytes.Slice((int)(dstRow + c * dCol), pixelSize));
+                }
             }
         }
 

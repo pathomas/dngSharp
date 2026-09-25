@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using DngSharp.Dng.Sdk.Codecs;
 using DngSharp.Dng.Sdk.Container;
@@ -76,7 +77,8 @@ public static class StripReader
                      ? MosaicInfoReader.Read(stream, ifd, be) : null;
 
         var activeArea  = CropAreaReader.ReadActiveArea(stream, ifd, be);
-        var defaultCropArea = DefaultCropAreaReader.ReadDefaultCropArea(stream, ifd, be, image.Bounds);
+        // DefaultCropOrigin is relative to ActiveArea (spec §"DefaultCropOrigin").
+        var defaultCropArea = DefaultCropAreaReader.ReadDefaultCropArea(stream, ifd, be, activeArea ?? image.Bounds);
         var opcodeList1 = OpcodeListTagReader.Read(stream, ifd, 1);
         var opcodeList2 = OpcodeListTagReader.Read(stream, ifd, 2);
         var opcodeList3 = OpcodeListTagReader.Read(stream, ifd, 3);
@@ -239,16 +241,54 @@ public static class StripReader
         // Phase B (parallel): decode each strip into its own disjoint
         // region of the output image. Decoders are stateless (see
         // IRawDecoder), and strip regions never overlap, so no locking.
+        //
+        // Codecs produce the on-disk interleaved sample order, while
+        // SimpleImage storage is planar — so each strip is decoded into a
+        // compact interleaved scratch and re-laid-out by PixelKernels.Copy.
         ParallelWork.For(0, offsets.Length, host?.Sniffer, host?.MaxThreads, i =>
         {
             uint stripTop    = (uint)i * rowsPerStrip;
             uint stripHeight = (uint)System.Math.Min((long)rowsPerStrip, (long)(imageHeight - stripTop));
 
             var dstArea = new DngRect((int)stripTop, 0, (int)(stripTop + stripHeight), (int)imageWidth);
-            var dst = image.GetTile(dstArea);
-            decoder.Decode(blobs[i], dst, be);
-            image.WriteTile(dst);
+            DecodeInto(decoder, blobs[i], be, dstArea, dstArea, planes, pixelType, image);
         });
+    }
+
+    /// <summary>
+    /// Decode one strip/tile blob into a compact interleaved scratch buffer
+    /// covering <paramref name="codedArea"/>, then copy the
+    /// <paramref name="dstArea"/> sub-rectangle (equal to
+    /// <paramref name="codedArea"/> except for edge tiles, which the codec
+    /// pads to the full tile size) into <paramref name="image"/>.
+    /// </summary>
+    private static void DecodeInto(
+        IRawDecoder decoder, byte[] blob, bool be,
+        DngRect codedArea, DngRect dstArea,
+        uint planes, PixelType pixelType, SimpleImage image)
+    {
+        // Single-plane, full-width strips: planar and interleaved layouts
+        // coincide and the image tile is a compact row-major block, so the
+        // codec can write straight into it (no scratch, no copy).
+        if (planes == 1 && codedArea == dstArea && dstArea.W == image.Bounds.W)
+        {
+            decoder.Decode(blob, image.GetTile(dstArea), be);
+            return;
+        }
+
+        int size = pixelType.SizeBytes();
+        int required = checked((int)((long)codedArea.W * codedArea.H * planes * size));
+        byte[] rented = ArrayPool<byte>.Shared.Rent(required);
+        try
+        {
+            var scratch = PixelBuffer.Interleaved(codedArea, planes, pixelType, rented.AsMemory(0, required));
+            decoder.Decode(blob, scratch, be);
+            PixelKernels.Copy(scratch.SubView(dstArea), image.GetTile(dstArea));
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     // ── Tiles ────────────────────────────────────────────────────────────────
@@ -294,42 +334,16 @@ public static class StripReader
             uint tileActH = (uint)System.Math.Min((long)tileH, (long)(imageH - tileTop));
             uint tileActW = (uint)System.Math.Min((long)tileW, (long)(imageW - tileLeft));
 
-            // ALWAYS decode into a compact scratch buffer (origin at 0,0) and
-            // then copy row-by-row into the strided image buffer.
-            //
-            // Root cause: image.GetTile(dstArea).RowStep = imageWidth × planes
-            // (strided), but compressed decoders like JXL write compactly
-            // (RowStep = tileWidth × planes). Giving a strided buffer to a
-            // compact writer causes rows to land at wrong offsets.
-            //
-            // For boundary (partial) tiles the logical tile size tileH × tileW is
-            // always used for the scratch — the codec encodes the full tile
-            // including any image-boundary padding.
-            var scratchBounds = new DngRect(0, 0, (int)tileH, (int)tileW);
-            var scratch = new SimpleImage(scratchBounds, planes, pixelType);
-            var scratchBuf = scratch.GetTile(scratchBounds);
-            decoder.Decode(blobs[idx], scratchBuf, be);
-            scratch.WriteTile(scratchBuf);
-
-            // Row-by-row copy from compact scratch → strided image.
+            // Codecs encode the full logical tile (tileH × tileW) including
+            // image-boundary padding, so decode the whole tile and copy only
+            // the in-image sub-rectangle.
+            var codedArea = new DngRect(
+                (int)tileTop, (int)tileLeft,
+                (int)(tileTop + tileH), (int)(tileLeft + tileW));
             var dstArea = new DngRect(
                 (int)tileTop, (int)tileLeft,
                 (int)(tileTop + tileActH), (int)(tileLeft + tileActW));
-            var dst      = image.GetTile(dstArea);
-            var dstBytes = dst.Memory.Span;
-            var srcBytes = scratchBuf.Memory.Span;
-            int rowBytes = (int)tileActW * (int)planes * (int)pixelType.SizeBytes();
-            int srcRowStride = (int)tileW * (int)planes * (int)pixelType.SizeBytes();
-
-            for (int row = 0; row < (int)tileActH; row++)
-            {
-                // Source: compact scratch, row-major from (row, 0).
-                int srcOff = row * srcRowStride;
-                // Destination: strided image buffer at (tileTop+row, tileLeft).
-                long dstOff = dst.OffsetBytes((int)tileTop + row, (int)tileLeft, 0);
-                srcBytes.Slice(srcOff, rowBytes).CopyTo(dstBytes.Slice((int)dstOff, rowBytes));
-            }
-            image.WriteTile(dst);
+            DecodeInto(decoder, blobs[idx], be, codedArea, dstArea, planes, pixelType, image);
         });
     }
 

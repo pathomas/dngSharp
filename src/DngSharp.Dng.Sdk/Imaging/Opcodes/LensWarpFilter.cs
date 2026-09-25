@@ -106,8 +106,7 @@ public static class LensWarpFilter
             // Fast path: nothing to warp. Still return a copy for consistent
             // ownership semantics with the non-NOP path.
             var copy = new SimpleImage(src.Bounds, src.Planes, src.PixelType);
-            src.Buffer.AsByteSpan()[..copy.Buffer.AsByteSpan().Length]
-                .CopyTo(copy.Buffer.AsByteSpan());
+            PixelKernels.Copy(src.Buffer, copy.Buffer);
             return copy;
         }
 

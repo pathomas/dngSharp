@@ -364,21 +364,31 @@ public static class Stage3Renderer
             throw new ArgumentException($"dest too small: need {total}, got {dest.Length}");
 
         var srcTile = src.GetTile(src.Bounds);
-        int length = srcTile.AsTypedSpan<float>().Length;
+        int w = (int)src.Bounds.W;
+        int h = (int)src.Bounds.H;
+        uint planes = src.Planes;
+        if (planes != 3)
+            throw new ArgumentException($"GammaAndQuantize expects 3 planes, got {planes}");
 
-        // Flat sample buffer: split into fixed-size chunks (independent of
-        // row geometry) and convert each chunk on its own thread.
-        const int chunk = 1 << 16;
-        int chunks = (length + chunk - 1) / chunk;
-        ParallelWork.For(0, chunks, host?.Sniffer, host?.MaxThreads, c =>
+        // Source storage is planar; output is interleaved RGB bytes. Walk one
+        // row per iteration: for each plane read the contiguous (or strided)
+        // float row and scatter to dest[(row*w+col)*3+plane]. Same per-sample
+        // math as before, so output bytes are identical.
+        ParallelWork.For(0, h, host?.Sniffer, host?.MaxThreads, r =>
         {
-            var srcSpan = srcTile.AsTypedSpan<float>();
-            int start = c * chunk;
-            int end = System.Math.Min(start + chunk, length);
-            for (int i = start; i < end; i++)
+            var srcBytes = srcTile.AsByteSpan();
+            int colStep = (int)srcTile.ColStep;
+            int destRow = r * w * 3;
+            for (uint p = 0; p < planes; p++)
             {
-                double g = SrgbGamma(System.Math.Clamp((double)srcSpan[i], 0.0, 1.0));
-                dest[i] = (byte)(g * 255.0 + 0.5);
+                int off = (int)(srcTile.OffsetBytes(src.Bounds.T + r, src.Bounds.L, p) / 4);
+                var floats = MemoryMarshal.Cast<byte, float>(srcBytes);
+                int d = destRow + (int)p;
+                for (int c = 0; c < w; c++, d += 3)
+                {
+                    double g = SrgbGamma(System.Math.Clamp((double)floats[off + c * colStep], 0.0, 1.0));
+                    dest[d] = (byte)(g * 255.0 + 0.5);
+                }
             }
         });
         return dest.AsSpan(0, total);
@@ -405,27 +415,79 @@ public static class Stage3Renderer
 
             int count = (int)(tile.R - tile.L);
 
-            // Fast path: no tone curve. SimpleImage always stores 3 interleaved
-            // planes, so a tile row's R/G/B triples are contiguous in memory
-            // (only rows, not columns, are strided at the parent image's full
-            // width) — de-interleave a row into R/G/B batches, run the 3×3
-            // matrix multiply + exposure scale with <see cref="Vector{Single}"/>,
-            // then re-interleave. Falls back to the scalar per-pixel loop
-            // (below) when a tone curve is present, since that's a
-            // non-vectorizable delegate call per sample.
-            if (toneCurve is null && Vector.IsHardwareAccelerated)
+            // Fast path: no tone curve, and both tiles are planar (ColStep==1)
+            // so each plane's row is one contiguous float span — feed R/G/B
+            // rows straight into <see cref="Vector{Single}"/> MADs with no
+            // de-interleave buffers. Falls back to the scalar per-pixel loop
+            // (below) when a tone curve is present (non-vectorizable delegate
+            // per sample) or a buffer isn't planar.
+            if (toneCurve is null && Vector.IsHardwareAccelerated
+                && srcTile.HasContiguousRows && dstTile.HasContiguousRows)
             {
                 float m00 = (float)combined[0, 0], m01 = (float)combined[0, 1], m02 = (float)combined[0, 2];
                 float m10 = (float)combined[1, 0], m11 = (float)combined[1, 1], m12 = (float)combined[1, 2];
                 float m20 = (float)combined[2, 0], m21 = (float)combined[2, 1], m22 = (float)combined[2, 2];
                 float expF = (float)exposureScale;
 
+                var srcF = MemoryMarshal.Cast<byte, float>(srcBytes);
+                var dstF = MemoryMarshal.Cast<byte, float>(dstBytes);
+
                 for (int row = tile.T; row < tile.B; row++)
                 {
-                    long srcRowOff = srcTile.OffsetBytes(row, tile.L, 0);
-                    long dstRowOff = dstTile.OffsetBytes(row, tile.L, 0);
-                    ProcessRowSimd(srcBytes, srcRowOff, dstBytes, dstRowOff, count,
+                    int sr = (int)(srcTile.OffsetBytes(row, tile.L, 0) / 4);
+                    int sg = (int)(srcTile.OffsetBytes(row, tile.L, 1) / 4);
+                    int sb = (int)(srcTile.OffsetBytes(row, tile.L, 2) / 4);
+                    int dr = (int)(dstTile.OffsetBytes(row, tile.L, 0) / 4);
+                    int dg = (int)(dstTile.OffsetBytes(row, tile.L, 1) / 4);
+                    int db = (int)(dstTile.OffsetBytes(row, tile.L, 2) / 4);
+                    ProcessRowSimd(
+                        srcF.Slice(sr, count), srcF.Slice(sg, count), srcF.Slice(sb, count),
+                        dstF.Slice(dr, count), dstF.Slice(dg, count), dstF.Slice(db, count),
                         m00, m01, m02, m10, m11, m12, m20, m21, m22, expF);
+                }
+
+                return;
+            }
+
+            // Hoist matrix cells out of the pixel loop (the indexer is a
+            // bounds-checked call per access).
+            double c00 = combined[0, 0], c01 = combined[0, 1], c02 = combined[0, 2];
+            double c10 = combined[1, 0], c11 = combined[1, 1], c12 = combined[1, 2];
+            double c20 = combined[2, 0], c21 = combined[2, 1], c22 = combined[2, 2];
+
+            // Planar scalar path: walk each row as six contiguous float spans
+            // (three in, three out) instead of computing six byte offsets per
+            // pixel. Same arithmetic as the general path below.
+            if (srcTile.HasContiguousRows && dstTile.HasContiguousRows)
+            {
+                var srcF = MemoryMarshal.Cast<byte, float>(srcBytes);
+                var dstF = MemoryMarshal.Cast<byte, float>(dstBytes);
+
+                for (int row = tile.T; row < tile.B; row++)
+                {
+                    var rIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 0) / 4), count);
+                    var gIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 1) / 4), count);
+                    var bIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 2) / 4), count);
+                    var rOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 0) / 4), count);
+                    var gOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 1) / 4), count);
+                    var bOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 2) / 4), count);
+
+                    for (int k = 0; k < count; k++)
+                    {
+                        double r = rIn[k], g = gIn[k], b = bIn[k];
+                        double or = (c00 * r + c01 * g + c02 * b) * exposureScale;
+                        double og = (c10 * r + c11 * g + c12 * b) * exposureScale;
+                        double ob = (c20 * r + c21 * g + c22 * b) * exposureScale;
+                        if (toneCurve is not null)
+                        {
+                            or = toneCurve(or);
+                            og = toneCurve(og);
+                            ob = toneCurve(ob);
+                        }
+                        rOut[k] = (float)or;
+                        gOut[k] = (float)og;
+                        bOut[k] = (float)ob;
+                    }
                 }
 
                 return;
@@ -445,9 +507,9 @@ public static class Stage3Renderer
                     double b = BinaryPrimitives.ReadSingleLittleEndian(srcBytes.Slice((int)off2, 4));
 
                     // Matrix multiply: camera → linear output RGB.
-                    double or = combined[0, 0] * r + combined[0, 1] * g + combined[0, 2] * b;
-                    double og = combined[1, 0] * r + combined[1, 1] * g + combined[1, 2] * b;
-                    double ob = combined[2, 0] * r + combined[2, 1] * g + combined[2, 2] * b;
+                    double or = c00 * r + c01 * g + c02 * b;
+                    double og = c10 * r + c11 * g + c12 * b;
+                    double ob = c20 * r + c21 * g + c22 * b;
 
                     // Baseline exposure.
                     or *= exposureScale;
@@ -473,81 +535,41 @@ public static class Stage3Renderer
             }
         }
 
-        // Bounded block size for the stack-allocated de-interleave buffers
-        // (6 buffers × 256 floats = 6 KiB), independent of image row width.
-        private const int SimdBlockSize = 256;
-
         /// <summary>
-        /// Vectorized 3×3 matrix multiply + exposure scale for a contiguous
-        /// run of <paramref name="count"/> interleaved RGB pixels.
+        /// Vectorized 3×3 matrix multiply + exposure scale over one planar row:
+        /// three contiguous input planes → three contiguous output planes.
+        /// Arithmetic order matches the scalar path's float evaluation
+        /// (<c>(r·m0 + g·m1 + b·m2)·exp</c>) so results are bit-identical to
+        /// the previous interleaved implementation.
         /// </summary>
         private static void ProcessRowSimd(
-            ReadOnlySpan<byte> srcBytes, long srcRowOffsetBytes,
-            Span<byte> dstBytes, long dstRowOffsetBytes,
-            int count,
+            ReadOnlySpan<float> rIn, ReadOnlySpan<float> gIn, ReadOnlySpan<float> bIn,
+            Span<float> rOut, Span<float> gOut, Span<float> bOut,
             float m00, float m01, float m02,
             float m10, float m11, float m12,
             float m20, float m21, float m22,
             float expScale)
         {
-            var srcRow = MemoryMarshal.Cast<byte, float>(srcBytes.Slice((int)srcRowOffsetBytes, count * 3 * 4));
-            var dstRow = MemoryMarshal.Cast<byte, float>(dstBytes.Slice((int)dstRowOffsetBytes, count * 3 * 4));
-
+            int count = rIn.Length;
             int vw = Vector<float>.Count;
-            Span<float> rBuf = stackalloc float[SimdBlockSize];
-            Span<float> gBuf = stackalloc float[SimdBlockSize];
-            Span<float> bBuf = stackalloc float[SimdBlockSize];
-            Span<float> orBuf = stackalloc float[SimdBlockSize];
-            Span<float> ogBuf = stackalloc float[SimdBlockSize];
-            Span<float> obBuf = stackalloc float[SimdBlockSize];
 
-            int done = 0;
-            while (done < count)
+            int k = 0;
+            for (; k + vw <= count; k += vw)
             {
-                int chunk = System.Math.Min(SimdBlockSize, count - done);
+                var rv = new Vector<float>(rIn.Slice(k, vw));
+                var gv = new Vector<float>(gIn.Slice(k, vw));
+                var bv = new Vector<float>(bIn.Slice(k, vw));
 
-                // De-interleave AoS (RGBRGB…) → SoA (R…, G…, B…).
-                for (int i = 0; i < chunk; i++)
-                {
-                    int baseIdx = (done + i) * 3;
-                    rBuf[i] = srcRow[baseIdx];
-                    gBuf[i] = srcRow[baseIdx + 1];
-                    bBuf[i] = srcRow[baseIdx + 2];
-                }
-
-                int k = 0;
-                for (; k + vw <= chunk; k += vw)
-                {
-                    var rv = new Vector<float>(rBuf.Slice(k, vw));
-                    var gv = new Vector<float>(gBuf.Slice(k, vw));
-                    var bv = new Vector<float>(bBuf.Slice(k, vw));
-
-                    var orv = (rv * m00 + gv * m01 + bv * m02) * expScale;
-                    var ogv = (rv * m10 + gv * m11 + bv * m12) * expScale;
-                    var obv = (rv * m20 + gv * m21 + bv * m22) * expScale;
-
-                    orv.CopyTo(orBuf.Slice(k, vw));
-                    ogv.CopyTo(ogBuf.Slice(k, vw));
-                    obv.CopyTo(obBuf.Slice(k, vw));
-                }
-                for (; k < chunk; k++)
-                {
-                    float r = rBuf[k], g = gBuf[k], b = bBuf[k];
-                    orBuf[k] = (r * m00 + g * m01 + b * m02) * expScale;
-                    ogBuf[k] = (r * m10 + g * m11 + b * m12) * expScale;
-                    obBuf[k] = (r * m20 + g * m21 + b * m22) * expScale;
-                }
-
-                // Re-interleave SoA → AoS.
-                for (int i = 0; i < chunk; i++)
-                {
-                    int baseIdx = (done + i) * 3;
-                    dstRow[baseIdx] = orBuf[i];
-                    dstRow[baseIdx + 1] = ogBuf[i];
-                    dstRow[baseIdx + 2] = obBuf[i];
-                }
-
-                done += chunk;
+                ((rv * m00 + gv * m01 + bv * m02) * expScale).CopyTo(rOut.Slice(k, vw));
+                ((rv * m10 + gv * m11 + bv * m12) * expScale).CopyTo(gOut.Slice(k, vw));
+                ((rv * m20 + gv * m21 + bv * m22) * expScale).CopyTo(bOut.Slice(k, vw));
+            }
+            for (; k < count; k++)
+            {
+                float r = rIn[k], g = gIn[k], b = bIn[k];
+                rOut[k] = (r * m00 + g * m01 + b * m02) * expScale;
+                gOut[k] = (r * m10 + g * m11 + b * m12) * expScale;
+                bOut[k] = (r * m20 + g * m21 + b * m22) * expScale;
             }
         }
     }
@@ -575,6 +597,35 @@ public static class Stage3Renderer
             var dstTile = dst.GetTile(tile);
             var srcBytes = srcTile.Memory.Span;
             var dstBytes = dstTile.Memory.Span;
+            int count = (int)(tile.R - tile.L);
+
+            // Planar fast path — see RenderTask: six contiguous row spans
+            // instead of six byte offsets per pixel.
+            if (srcTile.HasContiguousRows && dstTile.HasContiguousRows)
+            {
+                var srcF = MemoryMarshal.Cast<byte, float>(srcBytes);
+                var dstF = MemoryMarshal.Cast<byte, float>(dstBytes);
+
+                for (int row = tile.T; row < tile.B; row++)
+                {
+                    var rIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 0) / 4), count);
+                    var gIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 1) / 4), count);
+                    var bIn = srcF.Slice((int)(srcTile.OffsetBytes(row, tile.L, 2) / 4), count);
+                    var rOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 0) / 4), count);
+                    var gOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 1) / 4), count);
+                    var bOut = dstF.Slice((int)(dstTile.OffsetBytes(row, tile.L, 2) / 4), count);
+
+                    for (int k = 0; k < count; k++)
+                    {
+                        Transform(rIn[k], gIn[k], bIn[k], out double or, out double og, out double ob);
+                        rOut[k] = (float)or;
+                        gOut[k] = (float)og;
+                        bOut[k] = (float)ob;
+                    }
+                }
+
+                return;
+            }
 
             for (int row = tile.T; row < tile.B; row++)
             {
@@ -588,30 +639,7 @@ public static class Stage3Renderer
                     double cg = BinaryPrimitives.ReadSingleLittleEndian(srcBytes.Slice((int)off1, 4));
                     double cb = BinaryPrimitives.ReadSingleLittleEndian(srcBytes.Slice((int)off2, 4));
 
-                    // Camera → linear ProPhoto RGB (reference space).
-                    double pr = cameraToProPhoto[0, 0] * cr + cameraToProPhoto[0, 1] * cg + cameraToProPhoto[0, 2] * cb;
-                    double pg = cameraToProPhoto[1, 0] * cr + cameraToProPhoto[1, 1] * cg + cameraToProPhoto[1, 2] * cb;
-                    double pb = cameraToProPhoto[2, 0] * cr + cameraToProPhoto[2, 1] * cg + cameraToProPhoto[2, 2] * cb;
-
-                    // HSV hue/saturation/value correction (spec 6.3.7).
-                    hueSatMap.Apply(ref pr, ref pg, ref pb);
-
-                    // ProPhoto RGB → selected output space.
-                    double or = proPhotoToOutput[0, 0] * pr + proPhotoToOutput[0, 1] * pg + proPhotoToOutput[0, 2] * pb;
-                    double og = proPhotoToOutput[1, 0] * pr + proPhotoToOutput[1, 1] * pg + proPhotoToOutput[1, 2] * pb;
-                    double ob = proPhotoToOutput[2, 0] * pr + proPhotoToOutput[2, 1] * pg + proPhotoToOutput[2, 2] * pb;
-
-                    // Baseline exposure.
-                    or *= exposureScale;
-                    og *= exposureScale;
-                    ob *= exposureScale;
-
-                    if (toneCurve is not null)
-                    {
-                        or = toneCurve(or);
-                        og = toneCurve(og);
-                        ob = toneCurve(ob);
-                    }
+                    Transform(cr, cg, cb, out double or, out double og, out double ob);
 
                     long doff0 = dstTile.OffsetBytes(row, col, 0);
                     long doff1 = dstTile.OffsetBytes(row, col, 1);
@@ -620,6 +648,45 @@ public static class Stage3Renderer
                     BinaryPrimitives.WriteSingleLittleEndian(dstBytes.Slice((int)doff1, 4), (float)og);
                     BinaryPrimitives.WriteSingleLittleEndian(dstBytes.Slice((int)doff2, 4), (float)ob);
                 }
+            }
+        }
+
+        // Matrix cells hoisted once per task; the DngMatrix indexer is a
+        // bounds-checked call that would otherwise run 18× per pixel.
+        private readonly double _a00 = cameraToProPhoto[0, 0], _a01 = cameraToProPhoto[0, 1], _a02 = cameraToProPhoto[0, 2];
+        private readonly double _a10 = cameraToProPhoto[1, 0], _a11 = cameraToProPhoto[1, 1], _a12 = cameraToProPhoto[1, 2];
+        private readonly double _a20 = cameraToProPhoto[2, 0], _a21 = cameraToProPhoto[2, 1], _a22 = cameraToProPhoto[2, 2];
+        private readonly double _b00 = proPhotoToOutput[0, 0], _b01 = proPhotoToOutput[0, 1], _b02 = proPhotoToOutput[0, 2];
+        private readonly double _b10 = proPhotoToOutput[1, 0], _b11 = proPhotoToOutput[1, 1], _b12 = proPhotoToOutput[1, 2];
+        private readonly double _b20 = proPhotoToOutput[2, 0], _b21 = proPhotoToOutput[2, 1], _b22 = proPhotoToOutput[2, 2];
+
+        /// <summary>
+        /// One camera-space pixel → output space: camera → linear ProPhoto RGB
+        /// (reference space) → HSV hue/sat/value correction (spec 6.3.7) →
+        /// output space → baseline exposure → optional tone curve.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private void Transform(double cr, double cg, double cb, out double or, out double og, out double ob)
+        {
+            double pr = _a00 * cr + _a01 * cg + _a02 * cb;
+            double pg = _a10 * cr + _a11 * cg + _a12 * cb;
+            double pb = _a20 * cr + _a21 * cg + _a22 * cb;
+
+            hueSatMap.Apply(ref pr, ref pg, ref pb);
+
+            or = _b00 * pr + _b01 * pg + _b02 * pb;
+            og = _b10 * pr + _b11 * pg + _b12 * pb;
+            ob = _b20 * pr + _b21 * pg + _b22 * pb;
+
+            or *= exposureScale;
+            og *= exposureScale;
+            ob *= exposureScale;
+
+            if (toneCurve is not null)
+            {
+                or = toneCurve(or);
+                og = toneCurve(og);
+                ob = toneCurve(ob);
             }
         }
     }

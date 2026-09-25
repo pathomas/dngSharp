@@ -23,17 +23,24 @@ namespace DngSharp.Dng.Sdk.Pipeline;
 public static class StageImageWriter
 {
     /// <summary>Write <paramref name="image"/> to <paramref name="path"/>.</summary>
-    public static void Write(SimpleImage image, string path)
+    /// <param name="image">Image to write.</param>
+    /// <param name="path">Output file path.</param>
+    /// <param name="tiffOrientation">
+    /// Optional TIFF <c>Orientation</c> tag value (1–8). Like
+    /// <c>dng_image_writer::WriteTIFF</c>, pixels are written unrotated and
+    /// the tag tells viewers how to display them. Omitted when 0/1.
+    /// </param>
+    public static void Write(SimpleImage image, string path, uint tiffOrientation = 0)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(path);
 
         using var stream = DngFileStream.Create(path);
-        Write(image, stream);
+        Write(image, stream, tiffOrientation);
     }
 
     /// <summary>Write <paramref name="image"/> to <paramref name="stream"/>.</summary>
-    public static void Write(SimpleImage image, DngStream stream)
+    public static void Write(SimpleImage image, DngStream stream, uint tiffOrientation = 0)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(stream);
@@ -61,7 +68,8 @@ public static class StageImageWriter
                      $"StageImageWriter: unsupported pixel type {image.PixelType}"),
         };
 
-        byte[] pixelBytes = image.GetTile(image.Bounds).Memory.ToArray();
+        // PlanarConfiguration=1 (chunky) on disk; SimpleImage storage is planar.
+        byte[] pixelBytes = PixelKernels.ToInterleavedBytes(image.Buffer);
 
         // ── Build the IFD ────────────────────────────────────────────────────
 
@@ -78,6 +86,8 @@ public static class StageImageWriter
         ifd.Entries.Add(TagBuilder.UInt32(DngTagCode.StripByteCounts, (uint)pixelBytes.Length, be));
         ifd.Entries.Add(UInt16Array(DngTagCode.SampleFormat, Repeat(fmt, planes), be));
         ifd.Entries.Add(TagBuilder.UInt16(DngTagCode.PlanarConfiguration, 1, be));
+        if (tiffOrientation is > 1 and <= 8)
+            ifd.Entries.Add(TagBuilder.UInt16(DngTagCode.Orientation, (ushort)tiffOrientation, be));
 
         // StripOffsets: placeholder in the IFD; the DeferredBlob patches it
         // once TiffWriter knows the blob's absolute file position.
