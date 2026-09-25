@@ -59,8 +59,10 @@ dotnet build Dng.slnx -c Release          # 0 warnings, 0 errors
 dotnet test  Dng.slnx -c Release          # xUnit suite, 366/366 passing
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- <file.dng>                      # CLI summary
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- -jpeg out.jpg <file.dng>        # render to JPEG
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- -tif out.tif <file.dng>        # render to 8-bit RGB TIFF (lossless)
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- -webp out.webp <file.dng>       # render to WebP
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- -threads 1 -jpeg out.jpg <file.dng>  # cap worker threads (default: all cores)
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- -timing -jpeg out.jpg <file.dng>     # print per-step render timings
 ```
 
 Pixel-domain stages (strip/tile decode, linearization, opcodes, demosaic,

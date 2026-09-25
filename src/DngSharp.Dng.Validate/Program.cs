@@ -83,7 +83,7 @@ static class Cli
             if (opts.DngOutput is { } outPath)
                 RoundTripDng(stream, container, outPath);
 
-            if (opts.JpegOutput is not null || opts.WebPOutput is not null)
+            if (opts.JpegOutput is not null || opts.WebPOutput is not null || opts.TifOutput is not null)
                 RenderAndSave(stream, container, opts);
 
             if (opts.Stage1Output is not null || opts.Stage2Output is not null || opts.Stage3Output is not null)
@@ -243,6 +243,7 @@ static class Cli
         public bool Verbose { get; set; }
         public string? DngOutput { get; set; }
         public string? JpegOutput { get; set; }
+        public string? TifOutput { get; set; }
         public string? WebPOutput { get; set; }
         public OutputColorSpace ColorSpace { get; set; } = OutputColorSpace.Srgb;
         public bool HdrMode { get; set; }
@@ -250,6 +251,7 @@ static class Cli
         public string? Stage2Output { get; set; }
         public string? Stage3Output { get; set; }
         public int? Threads { get; set; }
+        public bool Timing { get; set; }
 
         /// <summary>Build the <see cref="DngHost"/> that carries these options into the SDK.</summary>
         public DngHost CreateHost() => new() { MaxThreads = Threads };
@@ -275,6 +277,11 @@ static class Cli
                     if (i + 1 >= args.Length)
                         throw new DngException(DngError.Unknown, "-jpeg requires an output path");
                     opts.JpegOutput = args[++i];
+                    break;
+                case "-tif":
+                    if (i + 1 >= args.Length)
+                        throw new DngException(DngError.Unknown, "-tif requires an output path");
+                    opts.TifOutput = args[++i];
                     break;
                 case "-webp":
                     if (i + 1 >= args.Length)
@@ -313,6 +320,9 @@ static class Cli
                     if (i + 1 >= args.Length)
                         throw new DngException(DngError.Unknown, "-3 requires an output path");
                     opts.Stage3Output = args[++i];
+                    break;
+                case "-timing":
+                    opts.Timing = true;
                     break;
                 case "-threads":
                     if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out int threads) || threads < 1)
@@ -409,9 +419,9 @@ static class Cli
     private static void RenderAndSave(DngStream stream, DngContainer container, Options opts)
     {
         // Validate HDR flag usage.
-        if (opts.HdrMode && opts.JpegOutput is not null)
+        if (opts.HdrMode && (opts.JpegOutput is not null || opts.TifOutput is not null))
             throw new DngException(DngError.Unknown,
-                "-hdr is not supported with -jpeg: JPEG cannot carry HDR. Use -webp -hdr instead.");
+                "-hdr is not supported with -jpeg/-tif: use -webp -hdr instead.");
 
         // Build codec registry — register JXL if available.
         var registry = new CodecRegistry();
@@ -421,15 +431,18 @@ static class Cli
         if (JxlDecoder.IsAvailable) registry.Register(new JxlDecoder());
 
         var host = opts.CreateHost();
+        var timer = new StepTimer(opts.Timing);
 
         // 1. Decode → Stage 1 (also reads linearization + mosaic from IFD).
         Console.WriteLine("  Decoding Stage 1 ...");
         var result = StripReader.ReadStage1(stream, container, registry, host);
+        timer.Lap("read Stage 1");
         var photometric = result.Photometric;
 
         // OpcodeList1 runs on the raw, unlinearized Stage-1 image, per
         // dng_negative::ReadStage1Image.
         var stage1Image = OpcodeList1Applier.Apply(result.Stage1, result.OpcodeList1, host);
+        timer.Lap($"OpcodeList1 ({result.OpcodeList1?.Count ?? 0} opcodes)");
 
         // Also decode the transparency mask (if the DNG has one), so it can
         // be composited against the rendered output below. Native always
@@ -441,6 +454,7 @@ static class Cli
         // masked-out fringe can carry noisy/invalid edge pixels that
         // otherwise show up as visible "streaking".
         var maskImage = StripReader.ReadMaskImage(stream, container, registry, host);
+        timer.Lap("read transparency mask");
 
         if (!Stage3Builder.CanBuild(photometric, result.Mosaic))
             throw new DngException(DngError.NotYetImplemented,
@@ -451,13 +465,16 @@ static class Cli
         // 2. Stage 2: linearize using IFD-read parameters.
         Console.WriteLine("  Linearizing Stage 2 ...");
         var stage2 = Stage2Builder.Build(stage1Image, result.Linearization, host);
+        timer.Lap("linearize Stage 2");
 
         // OpcodeList2 runs on the linearized Stage-2 image, per
         // dng_negative::BuildStage2Image.
         stage2 = OpcodeList2Applier.Apply(stage2, result.OpcodeList2, host);
+        timer.Lap($"OpcodeList2 ({result.OpcodeList2?.Count ?? 0} opcodes)");
 
         // 3. Stage 3: passthrough for LinearRaw/RGB; bilinear demosaic for CFA.
         var stage3 = Stage3Builder.Build(stage2, photometric, result.Mosaic, host);
+        timer.Lap("demosaic Stage 3");
 
         if (stage3 is not DngSharp.Dng.Sdk.Imaging.SimpleImage simpleStage3)
             throw new DngException(DngError.Unknown, "Stage3 is not a SimpleImage — unexpected image type");
@@ -465,6 +482,7 @@ static class Cli
         // OpcodeList3 (e.g. WarpRectilinear lens-CA correction) runs on the
         // demosaiced Stage-3 image, per dng_negative::BuildStage3Image.
         simpleStage3 = OpcodeList3Applier.Apply(simpleStage3, result.OpcodeList3, host);
+        timer.Lap($"OpcodeList3 ({result.OpcodeList3?.Count ?? 0} opcodes)");
 
         // Crop to the "clean" rendered-image rect. DefaultCropArea (when
         // present) is what dng_render.cpp actually uses — it's tighter than
@@ -516,6 +534,8 @@ static class Cli
             }
         }
 
+        timer.Lap("crop");
+
         // 4. Color transform: embedded camera profile → XYZ_D50 → selected output RGB space.
         Console.WriteLine("  Applying color transform ...");
         var camToXyz = Stage3Renderer.ResolveCameraToXyzD50(result.CameraProfile, result.Shared);
@@ -539,12 +559,14 @@ static class Cli
             host: host,
             colorSpace: opts.ColorSpace,
             hueSatMap: hueSatMap);
+        timer.Lap("color transform");
 
         // 5. HDR tone-map (SDR output path only).
         if (!opts.HdrMode)
         {
             Console.WriteLine("  Tone-mapping HDR → SDR ...");
             HdrToneMapper.Apply(linearRgb, result.CameraProfile?.ToneCurve, host);
+            timer.Lap("tone-map");
         }
 
         int w = (int)linearRgb.Bounds.W, h = (int)linearRgb.Bounds.H;
@@ -555,9 +577,30 @@ static class Cli
             var rgbBytes = new byte[w * h * 3];
             Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes, host);
             CompositeMaskAgainstWhite(rgbBytes, maskImage, w, h);
+            timer.Lap("gamma + quantize");
             var jpegBytes = JpegEncoder.Encode(rgbBytes, w, h);
+            timer.Lap("JPEG encode");
             File.WriteAllBytes(jpegPath, jpegBytes);
             Console.WriteLine($"  → wrote {jpegBytes.Length:N0} bytes to {jpegPath}");
+        }
+
+        if (opts.TifOutput is { } tifPath)
+        {
+            // Same 8-bit sRGB-gamma pixels as -jpeg, stored losslessly as an
+            // uncompressed chunky RGB TIFF (mirrors dng_validate -tif).
+            Console.WriteLine("  Writing TIFF ...");
+            var rgbBytes = new byte[w * h * 3];
+            Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes, host);
+            CompositeMaskAgainstWhite(rgbBytes, maskImage, w, h);
+            var rgb8 = new DngSharp.Dng.Sdk.Imaging.SimpleImage(linearRgb.Bounds, 3, DngSharp.Dng.Sdk.Pixels.PixelType.UInt8);
+            rgb8.WriteTile(DngSharp.Dng.Sdk.Pixels.PixelBuffer.Interleaved(linearRgb.Bounds, 3, DngSharp.Dng.Sdk.Pixels.PixelType.UInt8, rgbBytes));
+            // Mirror dng_validate -tif: pixels stay unrotated; carry the
+            // source's Orientation tag so viewers display it correctly.
+            timer.Lap("gamma + quantize");
+            uint orientation = ReadOrientation(container, stream);
+            StageImageWriter.Write(rgb8, tifPath, orientation);
+            timer.Lap("TIFF write");
+            Console.WriteLine($"  → wrote {new FileInfo(tifPath).Length:N0} bytes to {tifPath}");
         }
 
         if (opts.WebPOutput is { } webpPath)
@@ -577,9 +620,44 @@ static class Cli
                 CompositeMaskAgainstWhite(rgbBytes, maskImage, w, h);
                 webpBytes = WebPEncoder.EncodeSdr(rgbBytes, w, h);
             }
+            timer.Lap("WebP encode");
             File.WriteAllBytes(webpPath, webpBytes);
             Console.WriteLine($"  → wrote {webpBytes.Length:N0} bytes to {webpPath}");
         }
+        timer.Total();
+    }
+
+    /// <summary>
+    /// Per-step wall-clock reporter behind <c>-timing</c>, in the spirit of
+    /// dng_validate's "Raw image read time" / "Linearization time" lines.
+    /// </summary>
+    private sealed class StepTimer(bool enabled)
+    {
+        private readonly System.Diagnostics.Stopwatch _lap = System.Diagnostics.Stopwatch.StartNew();
+        private readonly System.Diagnostics.Stopwatch _total = System.Diagnostics.Stopwatch.StartNew();
+
+        public void Lap(string step)
+        {
+            if (!enabled) return;
+            Console.WriteLine($"    [timing] {step,-32} {_lap.Elapsed.TotalMilliseconds,8:F1} ms");
+            _lap.Restart();
+        }
+
+        public void Total()
+        {
+            if (!enabled) return;
+            Console.WriteLine($"    [timing] {"total render",-32} {_total.Elapsed.TotalMilliseconds,8:F1} ms");
+        }
+    }
+
+    /// <summary>TIFF Orientation (1–8) from IFD 0, or 1 (normal) if absent.</summary>
+    private static uint ReadOrientation(DngContainer container, DngStream stream)
+    {
+        if (container.TopLevelIfds.Count == 0) return 1;
+        var entry = container.TopLevelIfds[0].Find(DngTagCode.Orientation);
+        if (entry is null) return 1;
+        uint v = entry.GetScalarUInt(stream.BigEndian);
+        return v is >= 1 and <= 8 ? v : 1;
     }
 
     /// <summary>
@@ -736,6 +814,7 @@ static class Cli
         Console.WriteLine("  -2 <out.tif>          Write Stage-2 image (linearized Float32) to TIFF.");
         Console.WriteLine("  -3 <out.tif>          Write Stage-3 image (demosaiced Float32) to TIFF.");
         Console.WriteLine("  -jpeg <out.jpg>       Render to JPEG (8-bit, tone-mapped for HDR sources).");
+        Console.WriteLine("  -tif <out.tif>        Render to uncompressed 8-bit RGB TIFF (same pixels as -jpeg, lossless).");
         Console.WriteLine("  -webp <out.webp>      Render to WebP (SDR 8-bit by default; HDR F16 with -hdr).");
         Console.WriteLine("  -cs1                  Render to sRGB / Rec.709 (default).");
         Console.WriteLine("  -cs2                  Render to Adobe RGB (1998).");
@@ -744,6 +823,7 @@ static class Cli
         Console.WriteLine("  -cs2020               Render to Rec.2020 / BT.2020.");
         Console.WriteLine("  -hdr                  Keep HDR range in -webp output (VP8L F16). Incompatible with -jpeg.");
         Console.WriteLine("  -threads <n>          Limit parallel decode/pixel work to n threads (default: all cores).");
+        Console.WriteLine("  -timing               Print per-step wall-clock timings for the render pipeline.");
         Console.WriteLine("  -h, --help            Show this help.");
         Console.WriteLine();
         Console.WriteLine("Default (no flag): one-line summary per file.");

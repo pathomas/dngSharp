@@ -60,4 +60,11 @@ public class OutputColorSpaceTests
 
         Assert.Equal(OutputColorSpace.AdobeRgb, options.ColorSpace);
     }
+
+    [Fact]
+    public void ParseOptions_timing_flag_is_off_by_default_and_toggles_on()
+    {
+        Assert.False(Cli.ParseOptions(["input.dng"]).Timing);
+        Assert.True(Cli.ParseOptions(["-timing", "input.dng"]).Timing);
+    }
 }
