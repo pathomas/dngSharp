@@ -27,8 +27,32 @@ dotnet run --project tests\DngSharp.Dng.Sdk.Benchmarks -c Release -- --filter * 
 | `ContainerParseBenchmarks.Parse` | `DngContainer.Parse` over 4 representative samples (240 KB uncompressed, 5.7 MB SubIFD-heavy, 1.2 MB ExtraCameraProfiles, 24 MB JXL) | Parse-only cost every pipeline stage pays before doing real work — the number to beat when adding SIMD or reworking the IFD scanner |
 | `SimdKernelBenchmarks` | `Stage2Builder` linearization and `Stage3Renderer` matrix-transform, SIMD fast path vs. scalar fallback | See `phase10-simd.md` for results and the keep/drop decision |
 | `DemosaicBenchmarks.Demosaic_Bilinear` | `DemosaicBilinear.Build` (Stage 2 → Stage 3) on a synthetic 6000×4000 single-plane RGGB CFA image | Cost of the per-pixel bilinear kernel + border wrap; candidate for a future SIMD pass if profiling shows it's hot relative to linearization/matrix-transform |
-| `ParallelScalingBenchmarks` | Every `AreaTaskRunner` / `ParallelWork.For` kernel (linearization, demosaic, render, opcodes, gamma/quantize, multi-strip and tiled Deflate decode) swept over `DngHost.MaxThreads` = 1/2/4/all on a synthetic 6000×4000 image | See `phase10-parallel.md` for the scaling table and the memory-bandwidth-ceiling analysis |
+| `ParallelScalingBenchmarks` | Every `AreaTaskRunner` / `ParallelWork.For` kernel (linearization, demosaic, render, opcodes, gamma/quantize, multi-strip and tiled Deflate decode) swept over `DngHost.MaxThreads` = 1/2/4/all on a synthetic 6000×4000 image | See `phase10-parallel.md` for the scaling table and the memory-bandwidth-ceiling analysis; `phase10-soa.md` re-measures the layout-sensitive subset after the planar (SoA) storage switch |
+| `EndToEndBenchmarks` | The whole `-jpeg` render pipeline minus the JPEG encode (parse → decode → linearize → demosaic → crop → colour transform → tone-map) on the real camera DNGs under `images/`, serial vs. all cores | The number a CLI user actually experiences; see `phase10-end-to-end.md` for the cross-revision wall-clock table and per-step breakdown |
 | `JxlDecodeBenchmarks.ReadStage1` | Full `StripReader.ReadStage1` (parse + strip-read + `libjxl` decode) on `03_jxl_bayer_raw_integer.dng` | Requires `libjxl` on the loader path (`tools/build-libjxl.ps1`); pair with `ContainerParseBenchmarks.Parse` on the same file to isolate decode-only cost (`ReadStage1 − Parse ≈ JXL decode + strip copy`) |
+
+## End-to-end / cross-revision
+
+Microbenchmarks isolate one kernel on synthetic data; two more tools measure
+what a user of the CLI sees on real files:
+
+- `DngSharp.Dng.Validate -timing …` prints wall-clock milliseconds for every
+  render step (read Stage 1, linearize, demosaic, colour transform, tone-map,
+  gamma/quantize, encode). First stop when a real file is slower than the
+  microbenchmarks predict.
+- `tools/bench-revisions.sh [-n RUNS] REV… WORKTREE` builds the CLI at each
+  git revision in a throwaway worktree and times `-jpeg` over every
+  `images/*.dng`, interleaving revisions per run so thermal throttling hits
+  them equally. Emits a Markdown table with the speed-up relative to the
+  first revision. Results: `phase10-end-to-end.md`.
+
+## Results
+
+- `phase10-end-to-end.md` — **start here**: cross-revision wall clock on
+  real files (serial baseline → parallel → SoA), per-step breakdown, and
+  the ranked list of remaining levers.
+- `phase10-parallel.md`, `phase10-simd.md`, `phase10-soa.md` — per-kernel
+  microbenchmarks behind each optimisation.
 
 ## Baselines
 
