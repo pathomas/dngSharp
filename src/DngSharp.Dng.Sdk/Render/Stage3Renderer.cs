@@ -309,7 +309,7 @@ public static class Stage3Renderer
             var combined = CameraToOutputSpace(cameraToXyzD50, colorSpace);
             var task = new RenderTask(stage3, output, combined, exposureScale, toneCurve,
                                       host?.MaxTileEdgePixels ?? 256);
-            AreaTaskRunner.Run(task, stage3.Bounds, host?.Sniffer);
+            AreaTaskRunner.Run(task, stage3.Bounds, host);
         }
         else
         {
@@ -322,7 +322,7 @@ public static class Stage3Renderer
             var task = new HueSatMapRenderTask(stage3, output, cameraToProPhoto, proPhotoToOutput,
                                                 hueSatMap, exposureScale, toneCurve,
                                                 host?.MaxTileEdgePixels ?? 256);
-            AreaTaskRunner.Run(task, stage3.Bounds, host?.Sniffer);
+            AreaTaskRunner.Run(task, stage3.Bounds, host);
         }
 
         return output;
@@ -352,8 +352,9 @@ public static class Stage3Renderer
     /// </summary>
     /// <param name="src">Float32 linear-sRGB SimpleImage.</param>
     /// <param name="dest">Pre-allocated byte buffer (must be width×height×3 bytes).</param>
+    /// <param name="host">Optional host for cancellation and thread count.</param>
     /// <returns>Span over <paramref name="dest"/> filled with gamma-encoded UInt8 pixels.</returns>
-    public static Span<byte> GammaAndQuantize(SimpleImage src, byte[] dest)
+    public static Span<byte> GammaAndQuantize(SimpleImage src, byte[] dest, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(src);
         ArgumentNullException.ThrowIfNull(dest);
@@ -363,13 +364,23 @@ public static class Stage3Renderer
             throw new ArgumentException($"dest too small: need {total}, got {dest.Length}");
 
         var srcTile = src.GetTile(src.Bounds);
-        var srcSpan = srcTile.AsTypedSpan<float>();
+        int length = srcTile.AsTypedSpan<float>().Length;
 
-        for (int i = 0; i < srcSpan.Length; i++)
+        // Flat sample buffer: split into fixed-size chunks (independent of
+        // row geometry) and convert each chunk on its own thread.
+        const int chunk = 1 << 16;
+        int chunks = (length + chunk - 1) / chunk;
+        ParallelWork.For(0, chunks, host?.Sniffer, host?.MaxThreads, c =>
         {
-            double g = SrgbGamma(System.Math.Clamp((double)srcSpan[i], 0.0, 1.0));
-            dest[i] = (byte)(g * 255.0 + 0.5);
-        }
+            var srcSpan = srcTile.AsTypedSpan<float>();
+            int start = c * chunk;
+            int end = System.Math.Min(start + chunk, length);
+            for (int i = start; i < end; i++)
+            {
+                double g = SrgbGamma(System.Math.Clamp((double)srcSpan[i], 0.0, 1.0));
+                dest[i] = (byte)(g * 255.0 + 0.5);
+            }
+        });
         return dest.AsSpan(0, total);
     }
 

@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -125,7 +126,7 @@ public static class FixVignetteRadialOpcode
     /// Apply the decoded radial vignette gain to <paramref name="image"/> in
     /// place. No-op if the parameters are a NOP (all coefficients zero).
     /// </summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -156,29 +157,32 @@ public static class FixVignetteRadialOpcode
         double invMaxRadius2 = 1.0 / (maxRadius * maxRadius);
 
         var buf = image.Buffer;
-        var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
         var k = p.Coefficients;
 
-        for (int row = bounds.T; row < bounds.B; row++)
+        RowBandRunner.Run(bounds.T, bounds.B, host, (rowStart, rowEnd) =>
         {
-            double dv = (row + 0.5) - centerRow;
-            double dv2 = dv * dv;
-
-            for (int col = bounds.L; col < bounds.R; col++)
+            var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
+            for (int row = rowStart; row < rowEnd; row++)
             {
-                double dh = (col + 0.5) - centerCol;
-                double r2 = (dv2 + dh * dh) * invMaxRadius2;
-                if (r2 > 1.0) r2 = 1.0;
+                double dv = (row + 0.5) - centerRow;
+                double dv2 = dv * dv;
 
-                double gain = EvaluateGain(r2, k);
-
-                for (uint plane = 0; plane < image.Planes; plane++)
+                for (int col = bounds.L; col < bounds.R; col++)
                 {
-                    long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
-                    float v = floats[(int)idx] * (float)gain;
-                    floats[(int)idx] = float.Min(v, 1.0f);
+                    double dh = (col + 0.5) - centerCol;
+                    double r2 = (dv2 + dh * dh) * invMaxRadius2;
+                    if (r2 > 1.0) r2 = 1.0;
+
+                    double gain = EvaluateGain(r2, k);
+
+                    for (uint plane = 0; plane < image.Planes; plane++)
+                    {
+                        long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
+                        float v = floats[(int)idx] * (float)gain;
+                        floats[(int)idx] = float.Min(v, 1.0f);
+                    }
                 }
             }
-        }
+        });
     }
 }

@@ -2,6 +2,7 @@ using DngSharp.Dng.Sdk.Imaging;
 using DngSharp.Dng.Sdk.Pixels;
 using DngSharp.Dng.Sdk.Primitives;
 using DngSharp.Dng.Sdk.Tiff;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -91,7 +92,7 @@ public static class LensWarpFilter
     /// (square pixels) — pass <c>negative.PixelAspectRatio</c> when the port
     /// grows that field.
     /// </summary>
-    public static SimpleImage Apply(SimpleImage src, IWarpRectilinearParams warpParams, double pixelAspectRatio = 1.0)
+    public static SimpleImage Apply(SimpleImage src, IWarpRectilinearParams warpParams, double pixelAspectRatio = 1.0, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(src);
         ArgumentNullException.ThrowIfNull(warpParams);
@@ -144,62 +145,65 @@ public static class LensWarpFilter
             bool isTanNop = warpParams.IsTanNop((int)plane);
             bool isRadNop = warpParams.IsRadNop((int)plane);
 
-            var dstFloats = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(dstBuf.AsByteSpan());
-            var srcFloats = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(srcBuf.AsByteSpan());
-
-            for (int dstRow = bounds.T; dstRow < bounds.B; dstRow++)
+            RowBandRunner.Run(bounds.T, bounds.B, host, (rowStart, rowEnd) =>
             {
-                for (int dstCol = bounds.L; dstCol < bounds.R; dstCol++)
+                var dstFloats = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(dstBuf.AsByteSpan());
+                var srcFloats = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(srcBuf.AsByteSpan());
+
+                for (int dstRow = rowStart; dstRow < rowEnd; dstRow++)
                 {
-                    (double srcV, double srcH) = GetSrcPixelPosition(
-                        dstRow, dstCol, plane, warpParams, isRadNop, isTanNop,
-                        centerH, centerV, invNormRadius, normRadius,
-                        pixelScaleV, pixelScaleVInv);
-
-                    // Clamp to the full source image area (dng_filter_warp's
-                    // srcImageArea clamp, applied before int/frac decomposition).
-                    srcH = double.Clamp(srcH, bounds.L, bounds.R - 1.0);
-                    srcV = double.Clamp(srcV, bounds.T, bounds.B - 1.0);
-
-                    int sIntV = (int)System.Math.Floor(srcV);
-                    int sIntH = (int)System.Math.Floor(srcH);
-
-                    int sFracV = (int)((srcV - sIntV) * SubsampleCount);
-                    int sFracH = (int)((srcH - sIntH) * SubsampleCount);
-
-                    // Add resample offset (1 - radius).
-                    sIntV += 1 - Radius;
-                    sIntH += 1 - Radius;
-
-                    if (sIntH < hMin) { sIntH = hMin; sFracH = 0; }
-                    else if (sIntH > hMax) { sIntH = hMax; sFracH = 0; }
-
-                    if (sIntV < vMin) { sIntV = vMin; sFracV = 0; }
-                    else if (sIntV > vMax) { sIntV = vMax; sFracV = 0; }
-
-                    int weightBase = (sFracV * SubsampleCount + sFracH) * Width * Width;
-
-                    long srcRowStepSamples = srcBuf.RowStep;
-                    long srcBase = srcBuf.OffsetBytes(sIntV, sIntH, plane) / sizeof(float);
-
-                    float total = 0f;
-                    int wIdx = weightBase;
-                    long rowBase = srcBase;
-
-                    for (int i = 0; i < Width; i++)
+                    for (int dstCol = bounds.L; dstCol < bounds.R; dstCol++)
                     {
-                        for (int j = 0; j < Width; j++)
-                        {
-                            total += Weights[wIdx + j] * srcFloats[(int)(rowBase + (long)j * srcBuf.ColStep)];
-                        }
-                        wIdx += Width;
-                        rowBase += srcRowStepSamples;
-                    }
+                        (double srcV, double srcH) = GetSrcPixelPosition(
+                            dstRow, dstCol, plane, warpParams, isRadNop, isTanNop,
+                            centerH, centerV, invNormRadius, normRadius,
+                            pixelScaleV, pixelScaleVInv);
 
-                    long dstOffsetSamples = dstBuf.OffsetBytes(dstRow, dstCol, plane) / sizeof(float);
-                    dstFloats[(int)dstOffsetSamples] = float.Clamp(total, float.MinValue, float.MaxValue);
+                        // Clamp to the full source image area (dng_filter_warp's
+                        // srcImageArea clamp, applied before int/frac decomposition).
+                        srcH = double.Clamp(srcH, bounds.L, bounds.R - 1.0);
+                        srcV = double.Clamp(srcV, bounds.T, bounds.B - 1.0);
+
+                        int sIntV = (int)System.Math.Floor(srcV);
+                        int sIntH = (int)System.Math.Floor(srcH);
+
+                        int sFracV = (int)((srcV - sIntV) * SubsampleCount);
+                        int sFracH = (int)((srcH - sIntH) * SubsampleCount);
+
+                        // Add resample offset (1 - radius).
+                        sIntV += 1 - Radius;
+                        sIntH += 1 - Radius;
+
+                        if (sIntH < hMin) { sIntH = hMin; sFracH = 0; }
+                        else if (sIntH > hMax) { sIntH = hMax; sFracH = 0; }
+
+                        if (sIntV < vMin) { sIntV = vMin; sFracV = 0; }
+                        else if (sIntV > vMax) { sIntV = vMax; sFracV = 0; }
+
+                        int weightBase = (sFracV * SubsampleCount + sFracH) * Width * Width;
+
+                        long srcRowStepSamples = srcBuf.RowStep;
+                        long srcBase = srcBuf.OffsetBytes(sIntV, sIntH, plane) / sizeof(float);
+
+                        float total = 0f;
+                        int wIdx = weightBase;
+                        long rowBase = srcBase;
+
+                        for (int i = 0; i < Width; i++)
+                        {
+                            for (int j = 0; j < Width; j++)
+                            {
+                                total += Weights[wIdx + j] * srcFloats[(int)(rowBase + (long)j * srcBuf.ColStep)];
+                            }
+                            wIdx += Width;
+                            rowBase += srcRowStepSamples;
+                        }
+
+                        long dstOffsetSamples = dstBuf.OffsetBytes(dstRow, dstCol, plane) / sizeof(float);
+                        dstFloats[(int)dstOffsetSamples] = float.Clamp(total, float.MinValue, float.MaxValue);
+                    }
                 }
-            }
+            });
         }
 
         return dst;

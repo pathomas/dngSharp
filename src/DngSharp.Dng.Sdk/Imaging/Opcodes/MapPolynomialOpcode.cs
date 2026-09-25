@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -107,7 +108,7 @@ public static class MapPolynomialOpcode
     /// Apply the decoded polynomial to <paramref name="image"/> in place. No-op
     /// if the opcode's area doesn't overlap the image.
     /// </summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -123,25 +124,31 @@ public static class MapPolynomialOpcode
         uint colPitch = p.AreaSpec.ColPitch;
 
         var buf = image.Buffer;
-        var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
         var coefficients = p.Coefficients;
         uint degree = p.Degree;
 
         uint planeStart = p.AreaSpec.Plane;
         uint planeEnd = System.Math.Min(p.AreaSpec.Plane + p.AreaSpec.Planes, image.Planes);
 
-        for (uint plane = planeStart; plane < planeEnd; plane++)
+        uint rows = (overlap.H + rowPitch - 1) / rowPitch;
+
+        RowBandRunner.Run(rows, host, (rowStart, rowEnd) =>
         {
-            for (int row = overlap.T; row < overlap.B; row += (int)rowPitch)
+            var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
+            for (uint plane = planeStart; plane < planeEnd; plane++)
             {
-                for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                for (uint rowIdx = rowStart; rowIdx < rowEnd; rowIdx++)
                 {
-                    long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
-                    float x = floats[(int)idx];
-                    float y = Evaluate(x, coefficients, degree);
-                    floats[(int)idx] = float.Clamp(y, -1.0f, 1.0f);
+                    int row = overlap.T + (int)(rowIdx * rowPitch);
+                    for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                    {
+                        long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
+                        float x = floats[(int)idx];
+                        float y = Evaluate(x, coefficients, degree);
+                        floats[(int)idx] = float.Clamp(y, -1.0f, 1.0f);
+                    }
                 }
             }
-        }
+        });
     }
 }

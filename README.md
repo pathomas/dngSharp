@@ -60,7 +60,13 @@ dotnet test  Dng.slnx -c Release          # xUnit suite, 366/366 passing
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- <file.dng>                      # CLI summary
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- -jpeg out.jpg <file.dng>        # render to JPEG
 dotnet run --project src\DngSharp.Dng.Validate -c Release -- -webp out.webp <file.dng>       # render to WebP
+dotnet run --project src\DngSharp.Dng.Validate -c Release -- -threads 1 -jpeg out.jpg <file.dng>  # cap worker threads (default: all cores)
 ```
+
+Pixel-domain stages (strip/tile decode, linearization, opcodes, demosaic,
+render) run in parallel via `DngHost.MaxThreads`; output is byte-identical
+regardless of thread count. See `docs/perf/phase10-parallel.md` for scaling
+numbers.
 
 Native AOT publish smoke test (requires the platform's native toolchain for
 the link step; CI runs this on Windows, Linux, and macOS):

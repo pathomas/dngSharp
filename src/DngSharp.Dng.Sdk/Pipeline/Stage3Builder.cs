@@ -33,8 +33,9 @@ public static class Stage3Builder
     /// <param name="stage2">Stage-2 image (camera-space [0,1] float).</param>
     /// <param name="photometric">Photometric interpretation of the main IFD.</param>
     /// <param name="mosaic">CFA mosaic info (required for Bayer CFA; ignored otherwise).</param>
+    /// <param name="host">Optional host for cancellation and thread count.</param>
     /// <returns>The Stage-3 image. May be the same instance as <paramref name="stage2"/>.</returns>
-    public static DngImage Build(DngImage stage2, Photometric photometric, MosaicInfo? mosaic = null)
+    public static DngImage Build(DngImage stage2, Photometric photometric, MosaicInfo? mosaic = null, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(stage2);
         return photometric switch
@@ -42,7 +43,7 @@ public static class Stage3Builder
             Photometric.LinearRaw => stage2,
             Photometric.Rgb       => stage2,
             Photometric.Cfa when mosaic is not null =>
-                DemosaicBilinear.Build(stage2, mosaic),
+                DemosaicBilinear.Build(stage2, mosaic, host),
             _ => throw new NotSupportedException(
                      $"Stage3Builder: demosaic for photometric={photometric} is not supported. "
                      + "Supported today: LinearRaw, RGB passthrough; Bayer CFA with a MosaicInfo."),

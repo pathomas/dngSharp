@@ -32,7 +32,7 @@ public static class OpcodeList1Applier
     /// order, to <paramref name="stage1"/>. Returns the (possibly replaced)
     /// image; unsupported opcodes are left unapplied.
     /// </summary>
-    public static SimpleImage Apply(SimpleImage stage1, DngOpcodeList? opcodeList)
+    public static SimpleImage Apply(SimpleImage stage1, DngOpcodeList? opcodeList, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(stage1);
         if (opcodeList is null || opcodeList.IsEmpty) return stage1;
@@ -52,7 +52,7 @@ public static class OpcodeList1Applier
                 case OpcodeId.FixBadPixelsConstant:
                 {
                     var p = FixBadPixelsConstantOpcode.Decode(opcode.BodyBytes.Span);
-                    FixBadPixelsConstantOpcode.Apply(image, p);
+                    FixBadPixelsConstantOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.FixBadPixelsList:
@@ -64,7 +64,7 @@ public static class OpcodeList1Applier
                 case OpcodeId.MapTable:
                 {
                     var p = MapTableOpcode.Decode(opcode.BodyBytes.Span);
-                    MapTableOpcode.Apply(image, p);
+                    MapTableOpcode.Apply(image, p, host);
                     break;
                 }
                 default:

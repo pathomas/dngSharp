@@ -34,7 +34,7 @@ public static class OpcodeList2Applier
     /// order, to <paramref name="stage2"/>. Returns the (possibly replaced)
     /// image; unsupported opcodes are left unapplied.
     /// </summary>
-    public static SimpleImage Apply(SimpleImage stage2, DngOpcodeList? opcodeList)
+    public static SimpleImage Apply(SimpleImage stage2, DngOpcodeList? opcodeList, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(stage2);
         if (opcodeList is null || opcodeList.IsEmpty) return stage2;
@@ -48,25 +48,25 @@ public static class OpcodeList2Applier
                 case OpcodeId.DeltaPerRow:
                 {
                     var p = DeltaPerRowOpcode.Decode(opcode.BodyBytes.Span);
-                    DeltaPerRowOpcode.Apply(image, p);
+                    DeltaPerRowOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.DeltaPerColumn:
                 {
                     var p = DeltaPerColumnOpcode.Decode(opcode.BodyBytes.Span);
-                    DeltaPerColumnOpcode.Apply(image, p);
+                    DeltaPerColumnOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.ScalePerRow:
                 {
                     var p = ScalePerRowOpcode.Decode(opcode.BodyBytes.Span);
-                    ScalePerRowOpcode.Apply(image, p);
+                    ScalePerRowOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.ScalePerColumn:
                 {
                     var p = ScalePerColumnOpcode.Decode(opcode.BodyBytes.Span);
-                    ScalePerColumnOpcode.Apply(image, p);
+                    ScalePerColumnOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.TrimBounds:
@@ -78,19 +78,19 @@ public static class OpcodeList2Applier
                 case OpcodeId.MapPolynomial:
                 {
                     var p = MapPolynomialOpcode.Decode(opcode.BodyBytes.Span);
-                    MapPolynomialOpcode.Apply(image, p);
+                    MapPolynomialOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.GainMap:
                 {
                     var p = GainMapOpcode.Decode(opcode.BodyBytes.Span);
-                    GainMapOpcode.Apply(image, p);
+                    GainMapOpcode.Apply(image, p, host);
                     break;
                 }
                 case OpcodeId.FixVignetteRadial:
                 {
                     var p = FixVignetteRadialOpcode.Decode(opcode.BodyBytes.Span);
-                    FixVignetteRadialOpcode.Apply(image, p);
+                    FixVignetteRadialOpcode.Apply(image, p, host);
                     break;
                 }
                 default:

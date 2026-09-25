@@ -72,6 +72,13 @@ public interface IAreaTask
 public static class AreaTaskRunner
 {
     /// <summary>
+    /// Execute <paramref name="task"/> over <paramref name="area"/>, taking
+    /// cancellation and thread count from <paramref name="host"/>.
+    /// </summary>
+    public static void Run(IAreaTask task, DngRect area, DngSharp.Dng.Sdk.Pipeline.DngHost? host)
+        => Run(task, area, host?.Sniffer, host?.MaxThreads);
+
+    /// <summary>
     /// Execute <paramref name="task"/> over <paramref name="area"/>. Returns
     /// after every tile has completed (or one has thrown).
     ///
@@ -89,27 +96,64 @@ public static class AreaTaskRunner
         var tileSize = task.MaxTileSize(area.Size);
         var tiles = DngSharp.Dng.Sdk.Imaging.TileIterator.Enumerate(tileSize, area);
 
-        int dop = maxDegreeOfParallelism ?? Environment.ProcessorCount;
+        int completed = 0;
+        ParallelWork.For(0, tiles.Count, sniffer, maxDegreeOfParallelism, i =>
+        {
+            // Thread.CurrentThread.ManagedThreadId would over-count and
+            // not be stable; expose the loop index as "thread index" the
+            // way the C++ code does (consumers use it to index per-thread
+            // scratch buffers).
+            task.Process(Environment.CurrentManagedThreadId, tiles[i]);
+
+            int done = System.Threading.Interlocked.Increment(ref completed);
+            sniffer.Report((double)done / tiles.Count);
+        });
+    }
+}
+
+/// <summary>
+/// Thin wrapper over <see cref="Parallel.For(int,int,ParallelOptions,Action{int,ParallelLoopState})"/>
+/// that applies the SDK's degree-of-parallelism default and maps
+/// cancellation / aggregate exceptions to <see cref="DngException"/>.
+/// Shared by <see cref="AreaTaskRunner"/> and the strip/tile decoder.
+/// </summary>
+public static class ParallelWork
+{
+    /// <summary>
+    /// Run <paramref name="body"/> for every index in
+    /// <c>[fromInclusive, toExclusive)</c>. When the resolved degree of
+    /// parallelism is 1 the loop runs inline and in order, with no thread
+    /// pool involvement.
+    /// </summary>
+    public static void For(int fromInclusive, int toExclusive, AbortSniffer? sniffer,
+                           int? maxDegreeOfParallelism, Action<int> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+        sniffer ??= AbortSniffer.None;
+
+        if (toExclusive <= fromInclusive) return;
+
+        int dop = System.Math.Max(1, maxDegreeOfParallelism ?? Environment.ProcessorCount);
+
+        if (dop == 1)
+        {
+            for (int i = fromInclusive; i < toExclusive; i++)
+            {
+                sniffer.Sniff();
+                body(i);
+            }
+            return;
+        }
+
         var options = new ParallelOptions
         {
             CancellationToken = sniffer.Token,
-            MaxDegreeOfParallelism = System.Math.Max(1, dop),
+            MaxDegreeOfParallelism = dop,
         };
 
-        int completed = 0;
         try
         {
-            Parallel.For(0, tiles.Count, options, (i, _) =>
-            {
-                // Thread.CurrentThread.ManagedThreadId would over-count and
-                // not be stable; expose the loop index as "thread index" the
-                // way the C++ code does (consumers use it to index per-thread
-                // scratch buffers).
-                task.Process(Environment.CurrentManagedThreadId, tiles[i]);
-
-                int done = System.Threading.Interlocked.Increment(ref completed);
-                sniffer.Report((double)done / tiles.Count);
-            });
+            Parallel.For(fromInclusive, toExclusive, options, (i, _) => body(i));
         }
         catch (OperationCanceledException) when (sniffer.Token.IsCancellationRequested)
         {

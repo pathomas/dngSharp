@@ -122,7 +122,7 @@ public static class HdrToneMapper
             profileToneCurve = null; // degenerate curve → fall back to Reinhard
 
         var task = new ToneMapTask(image, profileToneCurve, host?.MaxTileEdgePixels ?? 256);
-        AreaTaskRunner.Run(task, image.Bounds, host?.Sniffer);
+        AreaTaskRunner.Run(task, image.Bounds, host);
     }
 
     // ── Piecewise-linear tone curve lookup ────────────────────────────────────

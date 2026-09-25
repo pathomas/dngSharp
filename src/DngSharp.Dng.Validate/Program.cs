@@ -249,6 +249,10 @@ static class Cli
         public string? Stage1Output { get; set; }
         public string? Stage2Output { get; set; }
         public string? Stage3Output { get; set; }
+        public int? Threads { get; set; }
+
+        /// <summary>Build the <see cref="DngHost"/> that carries these options into the SDK.</summary>
+        public DngHost CreateHost() => new() { MaxThreads = Threads };
     }
 
     internal static Options ParseOptions(string[] args)
@@ -310,6 +314,12 @@ static class Cli
                         throw new DngException(DngError.Unknown, "-3 requires an output path");
                     opts.Stage3Output = args[++i];
                     break;
+                case "-threads":
+                    if (i + 1 >= args.Length || !int.TryParse(args[i + 1], out int threads) || threads < 1)
+                        throw new DngException(DngError.Unknown, "-threads requires a positive integer");
+                    opts.Threads = threads;
+                    i++;
+                    break;
                 default:
                     if (a.StartsWith('-'))
                     {
@@ -336,12 +346,14 @@ static class Cli
         registry.Register(new DngSharp.Dng.Sdk.Codecs.LosslessJpeg.LosslessJpegDecoder());
         if (JxlDecoder.IsAvailable) registry.Register(new JxlDecoder());
 
+        var host = opts.CreateHost();
+
         Console.WriteLine("  Decoding Stage 1 ...");
-        var r = StripReader.ReadStage1(stream, container, registry);
+        var r = StripReader.ReadStage1(stream, container, registry, host);
 
         // OpcodeList1 runs on the raw, unlinearized Stage-1 image, per
         // dng_negative::ReadStage1Image.
-        var stage1Image = OpcodeList1Applier.Apply(r.Stage1, r.OpcodeList1);
+        var stage1Image = OpcodeList1Applier.Apply(r.Stage1, r.OpcodeList1, host);
 
         if (opts.Stage1Output is { } s1path)
         {
@@ -352,11 +364,11 @@ static class Cli
         if (opts.Stage2Output is not null || opts.Stage3Output is not null)
         {
             Console.WriteLine("  Linearizing Stage 2 ...");
-            var stage2 = Stage2Builder.Build(stage1Image, r.Linearization);
+            var stage2 = Stage2Builder.Build(stage1Image, r.Linearization, host);
 
             // OpcodeList2 runs on the linearized Stage-2 image, per
             // dng_negative::BuildStage2Image.
-            stage2 = OpcodeList2Applier.Apply(stage2, r.OpcodeList2);
+            stage2 = OpcodeList2Applier.Apply(stage2, r.OpcodeList2, host);
 
             if (opts.Stage2Output is { } s2path)
             {
@@ -371,13 +383,13 @@ static class Cli
                         $"-3 not yet supported for photometric={r.Photometric} without mosaic info. "
                         + "Supported: LinearRaw, RGB, Bayer CFA.");
 
-                var stage3Image = Stage3Builder.Build(stage2, r.Photometric, r.Mosaic);
+                var stage3Image = Stage3Builder.Build(stage2, r.Photometric, r.Mosaic, host);
                 if (stage3Image is not DngSharp.Dng.Sdk.Imaging.SimpleImage s3simple)
                     throw new DngException(DngError.Unknown, "Stage3 is not a SimpleImage");
 
                 // OpcodeList3 (e.g. WarpRectilinear lens-CA correction) runs on
                 // the demosaiced Stage-3 image, per dng_negative::BuildStage3Image.
-                s3simple = OpcodeList3Applier.Apply(s3simple, r.OpcodeList3);
+                s3simple = OpcodeList3Applier.Apply(s3simple, r.OpcodeList3, host);
 
                 // ActiveArea crop — matches what dng_validate -3 dumps.
                 if (r.ActiveArea is { } activeArea)
@@ -408,14 +420,16 @@ static class Cli
         registry.Register(new DngSharp.Dng.Sdk.Codecs.LosslessJpeg.LosslessJpegDecoder());
         if (JxlDecoder.IsAvailable) registry.Register(new JxlDecoder());
 
+        var host = opts.CreateHost();
+
         // 1. Decode → Stage 1 (also reads linearization + mosaic from IFD).
         Console.WriteLine("  Decoding Stage 1 ...");
-        var result = StripReader.ReadStage1(stream, container, registry);
+        var result = StripReader.ReadStage1(stream, container, registry, host);
         var photometric = result.Photometric;
 
         // OpcodeList1 runs on the raw, unlinearized Stage-1 image, per
         // dng_negative::ReadStage1Image.
-        var stage1Image = OpcodeList1Applier.Apply(result.Stage1, result.OpcodeList1);
+        var stage1Image = OpcodeList1Applier.Apply(result.Stage1, result.OpcodeList1, host);
 
         // Also decode the transparency mask (if the DNG has one), so it can
         // be composited against the rendered output below. Native always
@@ -426,7 +440,7 @@ static class Cli
         // full raw buffer (e.g. Portrait/Depth-effect captures), and the
         // masked-out fringe can carry noisy/invalid edge pixels that
         // otherwise show up as visible "streaking".
-        var maskImage = StripReader.ReadMaskImage(stream, container, registry);
+        var maskImage = StripReader.ReadMaskImage(stream, container, registry, host);
 
         if (!Stage3Builder.CanBuild(photometric, result.Mosaic))
             throw new DngException(DngError.NotYetImplemented,
@@ -436,21 +450,21 @@ static class Cli
 
         // 2. Stage 2: linearize using IFD-read parameters.
         Console.WriteLine("  Linearizing Stage 2 ...");
-        var stage2 = Stage2Builder.Build(stage1Image, result.Linearization);
+        var stage2 = Stage2Builder.Build(stage1Image, result.Linearization, host);
 
         // OpcodeList2 runs on the linearized Stage-2 image, per
         // dng_negative::BuildStage2Image.
-        stage2 = OpcodeList2Applier.Apply(stage2, result.OpcodeList2);
+        stage2 = OpcodeList2Applier.Apply(stage2, result.OpcodeList2, host);
 
         // 3. Stage 3: passthrough for LinearRaw/RGB; bilinear demosaic for CFA.
-        var stage3 = Stage3Builder.Build(stage2, photometric, result.Mosaic);
+        var stage3 = Stage3Builder.Build(stage2, photometric, result.Mosaic, host);
 
         if (stage3 is not DngSharp.Dng.Sdk.Imaging.SimpleImage simpleStage3)
             throw new DngException(DngError.Unknown, "Stage3 is not a SimpleImage — unexpected image type");
 
         // OpcodeList3 (e.g. WarpRectilinear lens-CA correction) runs on the
         // demosaiced Stage-3 image, per dng_negative::BuildStage3Image.
-        simpleStage3 = OpcodeList3Applier.Apply(simpleStage3, result.OpcodeList3);
+        simpleStage3 = OpcodeList3Applier.Apply(simpleStage3, result.OpcodeList3, host);
 
         // Crop to the "clean" rendered-image rect. DefaultCropArea (when
         // present) is what dng_render.cpp actually uses — it's tighter than
@@ -522,6 +536,7 @@ static class Cli
             camToXyz,
             baselineExposure,
             toneCurve: toneCurveFunc,
+            host: host,
             colorSpace: opts.ColorSpace,
             hueSatMap: hueSatMap);
 
@@ -529,7 +544,7 @@ static class Cli
         if (!opts.HdrMode)
         {
             Console.WriteLine("  Tone-mapping HDR → SDR ...");
-            HdrToneMapper.Apply(linearRgb, result.CameraProfile?.ToneCurve);
+            HdrToneMapper.Apply(linearRgb, result.CameraProfile?.ToneCurve, host);
         }
 
         int w = (int)linearRgb.Bounds.W, h = (int)linearRgb.Bounds.H;
@@ -538,7 +553,7 @@ static class Cli
         {
             Console.WriteLine("  Encoding JPEG ...");
             var rgbBytes = new byte[w * h * 3];
-            Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes);
+            Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes, host);
             CompositeMaskAgainstWhite(rgbBytes, maskImage, w, h);
             var jpegBytes = JpegEncoder.Encode(rgbBytes, w, h);
             File.WriteAllBytes(jpegPath, jpegBytes);
@@ -558,7 +573,7 @@ static class Cli
             {
                 Console.WriteLine("  Encoding WebP ...");
                 var rgbBytes = new byte[w * h * 3];
-                Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes);
+                Stage3Renderer.GammaAndQuantize(linearRgb, rgbBytes, host);
                 CompositeMaskAgainstWhite(rgbBytes, maskImage, w, h);
                 webpBytes = WebPEncoder.EncodeSdr(rgbBytes, w, h);
             }
@@ -728,6 +743,7 @@ static class Cli
         Console.WriteLine("  -csP3                 Render to Display P3.");
         Console.WriteLine("  -cs2020               Render to Rec.2020 / BT.2020.");
         Console.WriteLine("  -hdr                  Keep HDR range in -webp output (VP8L F16). Incompatible with -jpeg.");
+        Console.WriteLine("  -threads <n>          Limit parallel decode/pixel work to n threads (default: all cores).");
         Console.WriteLine("  -h, --help            Show this help.");
         Console.WriteLine();
         Console.WriteLine("Default (no flag): one-line summary per file.");

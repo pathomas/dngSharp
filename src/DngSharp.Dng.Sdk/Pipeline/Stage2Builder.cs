@@ -80,7 +80,7 @@ public static class Stage2Builder
         }
 
         var task = new LinearizationTask(stage1, stage2, lin, planeScale, host?.MaxTileEdgePixels ?? 256);
-        AreaTaskRunner.Run(task, stage1.Bounds, host?.Sniffer);
+        AreaTaskRunner.Run(task, stage1.Bounds, host);
 
         return stage2;
     }

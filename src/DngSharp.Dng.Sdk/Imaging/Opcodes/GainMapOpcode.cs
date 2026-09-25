@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -172,7 +173,7 @@ public static class GainMapOpcode
     /// Apply the decoded gain map to <paramref name="image"/> in place. No-op
     /// if the opcode's area doesn't overlap the image.
     /// </summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -197,38 +198,44 @@ public static class GainMapOpcode
         uint colPitch = p.AreaSpec.ColPitch;
 
         var buf = image.Buffer;
-        var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
 
         uint planeStart = p.AreaSpec.Plane;
         uint planeEnd = System.Math.Min(p.AreaSpec.Plane + p.AreaSpec.Planes, image.Planes);
 
-        for (uint plane = planeStart; plane < planeEnd; plane++)
+        uint rows = (overlap.H + rowPitch - 1) / rowPitch;
+
+        RowBandRunner.Run(rows, host, (rowStart, rowEnd) =>
         {
-            int mapPlane = (int)System.Math.Min(plane, p.Planes - 1);
-
-            for (int row = overlap.T; row < overlap.B; row += (int)rowPitch)
+            var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
+            for (uint plane = planeStart; plane < planeEnd; plane++)
             {
-                double rowPositionFrac = (row + 0.5 - bounds.T) / boundsH;
-                var (row1, row2, rowFrac) = ComputeAxis(rowPositionFrac, p.Origin.V, p.Spacing.V, lastRow);
+                int mapPlane = (int)System.Math.Min(plane, p.Planes - 1);
 
-                for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                for (uint rowIdx = rowStart; rowIdx < rowEnd; rowIdx++)
                 {
-                    double colPositionFrac = (col + 0.5 - bounds.L) / boundsW;
-                    var (col1, col2, colFrac) = ComputeAxis(colPositionFrac, p.Origin.H, p.Spacing.H, lastCol);
+                    int row = overlap.T + (int)(rowIdx * rowPitch);
+                    double rowPositionFrac = (row + 0.5 - bounds.T) / boundsH;
+                    var (row1, row2, rowFrac) = ComputeAxis(rowPositionFrac, p.Origin.V, p.Spacing.V, lastRow);
 
-                    float v00 = p.Entry(row1, col1, mapPlane);
-                    float v01 = p.Entry(row1, col2, mapPlane);
-                    float v10 = p.Entry(row2, col1, mapPlane);
-                    float v11 = p.Entry(row2, col2, mapPlane);
+                    for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                    {
+                        double colPositionFrac = (col + 0.5 - bounds.L) / boundsW;
+                        var (col1, col2, colFrac) = ComputeAxis(colPositionFrac, p.Origin.H, p.Spacing.H, lastCol);
 
-                    float top = v00 * (1.0f - colFrac) + v01 * colFrac;
-                    float bottom = v10 * (1.0f - colFrac) + v11 * colFrac;
-                    float gain = top * (1.0f - rowFrac) + bottom * rowFrac;
+                        float v00 = p.Entry(row1, col1, mapPlane);
+                        float v01 = p.Entry(row1, col2, mapPlane);
+                        float v10 = p.Entry(row2, col1, mapPlane);
+                        float v11 = p.Entry(row2, col2, mapPlane);
 
-                    long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
-                    floats[(int)idx] = float.Min(floats[(int)idx] * gain, 1.0f);
+                        float top = v00 * (1.0f - colFrac) + v01 * colFrac;
+                        float bottom = v10 * (1.0f - colFrac) + v11 * colFrac;
+                        float gain = top * (1.0f - rowFrac) + bottom * rowFrac;
+
+                        long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
+                        floats[(int)idx] = float.Min(floats[(int)idx] * gain, 1.0f);
+                    }
                 }
             }
-        }
+        });
     }
 }

@@ -18,4 +18,8 @@
     <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\MultiStripDngFactory.cs" Link="TestSupport\MultiStripDngFactory.cs" />
+  </ItemGroup>
+
 </Project>

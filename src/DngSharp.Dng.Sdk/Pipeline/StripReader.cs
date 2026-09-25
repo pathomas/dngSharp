@@ -231,18 +231,24 @@ public static class StripReader
         if (offsets.Length != byteCounts.Length)
             DngThrow.BadFormat($"StripReader: StripOffsets count ({offsets.Length}) ≠ StripByteCounts count ({byteCounts.Length})");
 
-        for (int i = 0; i < offsets.Length; i++)
+        // Phase A (serial): pull every compressed strip off the stream.
+        // DngStream wraps a positional Stream and is not safe to share
+        // across threads, so all I/O happens here, in file order.
+        var blobs = ReadAllBlobs(stream, offsets, byteCounts, host?.Sniffer);
+
+        // Phase B (parallel): decode each strip into its own disjoint
+        // region of the output image. Decoders are stateless (see
+        // IRawDecoder), and strip regions never overlap, so no locking.
+        ParallelWork.For(0, offsets.Length, host?.Sniffer, host?.MaxThreads, i =>
         {
             uint stripTop    = (uint)i * rowsPerStrip;
             uint stripHeight = (uint)System.Math.Min((long)rowsPerStrip, (long)(imageHeight - stripTop));
 
-            var compressed = ReadBytes(stream, (long)offsets[i], (long)byteCounts[i]);
-
             var dstArea = new DngRect((int)stripTop, 0, (int)(stripTop + stripHeight), (int)imageWidth);
             var dst = image.GetTile(dstArea);
-            decoder.Decode(compressed, dst, be);
+            decoder.Decode(blobs[i], dst, be);
             image.WriteTile(dst);
-        }
+        });
     }
 
     // ── Tiles ────────────────────────────────────────────────────────────────
@@ -277,56 +283,71 @@ public static class StripReader
                 $"StripReader: expected {tilesAcross}×{tilesDown}={tilesAcross * tilesDown} tiles, "
                 + $"got {offsets.Length} offset entries");
 
-        for (uint ty = 0; ty < tilesDown; ty++)
+        var blobs = ReadAllBlobs(stream, offsets, byteCounts, host?.Sniffer);
+
+        ParallelWork.For(0, offsets.Length, host?.Sniffer, host?.MaxThreads, idx =>
         {
-            for (uint tx = 0; tx < tilesAcross; tx++)
+            uint ty = (uint)idx / tilesAcross;
+            uint tx = (uint)idx % tilesAcross;
+            uint tileTop  = ty * tileH;
+            uint tileLeft = tx * tileW;
+            uint tileActH = (uint)System.Math.Min((long)tileH, (long)(imageH - tileTop));
+            uint tileActW = (uint)System.Math.Min((long)tileW, (long)(imageW - tileLeft));
+
+            // ALWAYS decode into a compact scratch buffer (origin at 0,0) and
+            // then copy row-by-row into the strided image buffer.
+            //
+            // Root cause: image.GetTile(dstArea).RowStep = imageWidth × planes
+            // (strided), but compressed decoders like JXL write compactly
+            // (RowStep = tileWidth × planes). Giving a strided buffer to a
+            // compact writer causes rows to land at wrong offsets.
+            //
+            // For boundary (partial) tiles the logical tile size tileH × tileW is
+            // always used for the scratch — the codec encodes the full tile
+            // including any image-boundary padding.
+            var scratchBounds = new DngRect(0, 0, (int)tileH, (int)tileW);
+            var scratch = new SimpleImage(scratchBounds, planes, pixelType);
+            var scratchBuf = scratch.GetTile(scratchBounds);
+            decoder.Decode(blobs[idx], scratchBuf, be);
+            scratch.WriteTile(scratchBuf);
+
+            // Row-by-row copy from compact scratch → strided image.
+            var dstArea = new DngRect(
+                (int)tileTop, (int)tileLeft,
+                (int)(tileTop + tileActH), (int)(tileLeft + tileActW));
+            var dst      = image.GetTile(dstArea);
+            var dstBytes = dst.Memory.Span;
+            var srcBytes = scratchBuf.Memory.Span;
+            int rowBytes = (int)tileActW * (int)planes * (int)pixelType.SizeBytes();
+            int srcRowStride = (int)tileW * (int)planes * (int)pixelType.SizeBytes();
+
+            for (int row = 0; row < (int)tileActH; row++)
             {
-                int idx = (int)(ty * tilesAcross + tx);
-                uint tileTop  = ty * tileH;
-                uint tileLeft = tx * tileW;
-                uint tileActH = (uint)System.Math.Min((long)tileH, (long)(imageH - tileTop));
-                uint tileActW = (uint)System.Math.Min((long)tileW, (long)(imageW - tileLeft));
-
-                var compressed = ReadBytes(stream, (long)offsets[idx], (long)byteCounts[idx]);
-
-                // ALWAYS decode into a compact scratch buffer (origin at 0,0) and
-                // then copy row-by-row into the strided image buffer.
-                //
-                // Root cause: image.GetTile(dstArea).RowStep = imageWidth × planes
-                // (strided), but compressed decoders like JXL write compactly
-                // (RowStep = tileWidth × planes). Giving a strided buffer to a
-                // compact writer causes rows to land at wrong offsets.
-                //
-                // For boundary (partial) tiles the logical tile size tileH × tileW is
-                // always used for the scratch — the codec encodes the full tile
-                // including any image-boundary padding.
-                var scratchBounds = new DngRect(0, 0, (int)tileH, (int)tileW);
-                var scratch = new SimpleImage(scratchBounds, planes, pixelType);
-                var scratchBuf = scratch.GetTile(scratchBounds);
-                decoder.Decode(compressed, scratchBuf, be);
-                scratch.WriteTile(scratchBuf);
-
-                // Row-by-row copy from compact scratch → strided image.
-                var dstArea = new DngRect(
-                    (int)tileTop, (int)tileLeft,
-                    (int)(tileTop + tileActH), (int)(tileLeft + tileActW));
-                var dst      = image.GetTile(dstArea);
-                var dstBytes = dst.Memory.Span;
-                var srcBytes = scratchBuf.Memory.Span;
-                int rowBytes = (int)tileActW * (int)planes * (int)pixelType.SizeBytes();
-                int srcRowStride = (int)tileW * (int)planes * (int)pixelType.SizeBytes();
-
-                for (int row = 0; row < (int)tileActH; row++)
-                {
-                    // Source: compact scratch, row-major from (row, 0).
-                    int srcOff = row * srcRowStride;
-                    // Destination: strided image buffer at (tileTop+row, tileLeft).
-                    long dstOff = dst.OffsetBytes((int)tileTop + row, (int)tileLeft, 0);
-                    srcBytes.Slice(srcOff, rowBytes).CopyTo(dstBytes.Slice((int)dstOff, rowBytes));
-                }
-                image.WriteTile(dst);
+                // Source: compact scratch, row-major from (row, 0).
+                int srcOff = row * srcRowStride;
+                // Destination: strided image buffer at (tileTop+row, tileLeft).
+                long dstOff = dst.OffsetBytes((int)tileTop + row, (int)tileLeft, 0);
+                srcBytes.Slice(srcOff, rowBytes).CopyTo(dstBytes.Slice((int)dstOff, rowBytes));
             }
+            image.WriteTile(dst);
+        });
+    }
+
+    /// <summary>
+    /// Serially read every strip/tile blob referenced by
+    /// <paramref name="offsets"/> / <paramref name="byteCounts"/>. Kept
+    /// single-threaded because <see cref="DngStream"/> carries a shared
+    /// position; the returned array is then safe to decode in parallel.
+    /// </summary>
+    private static byte[][] ReadAllBlobs(DngStream stream, ulong[] offsets, ulong[] byteCounts, AbortSniffer? sniffer)
+    {
+        var blobs = new byte[offsets.Length][];
+        for (int i = 0; i < offsets.Length; i++)
+        {
+            sniffer?.Sniff();
+            blobs[i] = ReadBytes(stream, (long)offsets[i], (long)byteCounts[i]);
         }
+        return blobs;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
