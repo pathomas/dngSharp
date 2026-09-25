@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/DngSharp.Dng.Sdk.Gpu/DngSharp.Dng.Sdk.Gpu.csproj" />
     <Project Path="src/DngSharp.Dng.Sdk.Jpeg/DngSharp.Dng.Sdk.Jpeg.csproj" />
     <Project Path="src/DngSharp.Dng.Sdk.Jxl/DngSharp.Dng.Sdk.Jxl.csproj" />
     <Project Path="src/DngSharp.Dng.Sdk.Preview/DngSharp.Dng.Sdk.Preview.csproj" />
@@ -10,6 +11,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DngSharp.Dng.Sdk.Benchmarks/DngSharp.Dng.Sdk.Benchmarks.csproj" />
+    <Project Path="tests/DngSharp.Dng.Sdk.Gpu.Tests/DngSharp.Dng.Sdk.Gpu.Tests.csproj" />
     <Project Path="tests/DngSharp.Dng.Sdk.Tests/DngSharp.Dng.Sdk.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">

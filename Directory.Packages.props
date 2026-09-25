@@ -20,6 +20,10 @@
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="4.148.0" />
     <PackageVersion Include="SkiaSharp.NativeAssets.macOS" Version="4.148.0" />
 
+    <!-- GPU (opt-in DngSharp.Dng.Sdk.Gpu; JIT-compiles kernels to PTX/OpenCL/CPU at runtime) -->
+    <PackageVersion Include="ILGPU" Version="1.5.3" />
+    <PackageVersion Include="ILGPU.Algorithms" Version="1.5.3" />
+
     <!-- CLI -->
     <PackageVersion Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>

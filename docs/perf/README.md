@@ -29,6 +29,7 @@ dotnet run --project tests\DngSharp.Dng.Sdk.Benchmarks -c Release -- --filter * 
 | `DemosaicBenchmarks.Demosaic_Bilinear` | `DemosaicBilinear.Build` (Stage 2 → Stage 3) on a synthetic 6000×4000 single-plane RGGB CFA image | Cost of the per-pixel bilinear kernel + border wrap; candidate for a future SIMD pass if profiling shows it's hot relative to linearization/matrix-transform |
 | `ParallelScalingBenchmarks` | Every `AreaTaskRunner` / `ParallelWork.For` kernel (linearization, demosaic, render, opcodes, gamma/quantize, multi-strip and tiled Deflate decode) swept over `DngHost.MaxThreads` = 1/2/4/all on a synthetic 6000×4000 image | See `phase10-parallel.md` for the scaling table and the memory-bandwidth-ceiling analysis; `phase10-soa.md` re-measures the layout-sensitive subset after the planar (SoA) storage switch |
 | `EndToEndBenchmarks` | The whole `-jpeg` render pipeline minus the JPEG encode (parse → decode → linearize → demosaic → crop → colour transform → tone-map) on the real camera DNGs under `images/`, serial vs. all cores | The number a CLI user actually experiences; see `phase10-end-to-end.md` for the cross-revision wall-clock table and per-step breakdown |
+| `GpuPipelineBenchmarks` | Decoded Stage 1 → SDR RGB8 on the real `images/*.dng`: CPU pipeline (all cores) vs. the device-resident ILGPU path in `DngSharp.Dng.Sdk.Gpu`, plus per-stage CPU/GPU pairs | Requires a CUDA/OpenCL device (`DNGSHARP_GPU_BACKEND=cuda`); see `phase10-gpu.md` — ≈14× on a Quadro P520, transfer-bound |
 | `JxlDecodeBenchmarks.ReadStage1` | Full `StripReader.ReadStage1` (parse + strip-read + `libjxl` decode) on `03_jxl_bayer_raw_integer.dng` | Requires `libjxl` on the loader path (`tools/build-libjxl.ps1`); pair with `ContainerParseBenchmarks.Parse` on the same file to isolate decode-only cost (`ReadStage1 − Parse ≈ JXL decode + strip copy`) |
 
 ## End-to-end / cross-revision
@@ -53,6 +54,9 @@ what a user of the CLI sees on real files:
   the ranked list of remaining levers.
 - `phase10-parallel.md`, `phase10-simd.md`, `phase10-soa.md` — per-kernel
   microbenchmarks behind each optimisation.
+- `phase10-gpu.md` — opt-in ILGPU back-end (`feature/ilgpu`): CPU vs GPU
+  per stage and resident, equivalence tolerances, memory budget, what is
+  not ported (opcodes, codecs).
 
 ## Baselines
 

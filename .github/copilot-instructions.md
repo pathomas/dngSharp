@@ -47,9 +47,15 @@ src/DngSharp.Dng.Sdk.Jxl/                      JPEG XL codec adapter (Phase 7 st
                                       will P/Invoke libjxl)
 src/DngSharp.Dng.Sdk.Xmp/                      XMP adapter (Phase 4 stub, will P/Invoke
                                       libxmp)
+src/DngSharp.Dng.Sdk.Gpu/                      opt-in ILGPU back-end: linearize →
+                                      demosaic → colour → tone map → RGB8 as
+                                      device-resident kernels (NOT AOT; never
+                                      reference from Validate)
 src/DngSharp.Dng.Validate/                     CLI mirroring dng_validate.cpp
                                       (Phase 9 — currently a banner stub)
 tests/DngSharp.Dng.Sdk.Tests/                  xUnit tests, snake_case names allowed
+tests/DngSharp.Dng.Sdk.Gpu.Tests/              GPU-vs-CPU equivalence (CPU accelerator
+                                      by default; DNGSHARP_GPU_BACKEND=cuda)
 tests/golden/capture.ps1              regenerates reference outputs from the
                                       native dng_validate
 tools/extract-tag-codes.ps1           regenerates Tiff/DngTagCode.cs from
@@ -81,7 +87,15 @@ dotnet publish src/DngSharp.Dng.Validate -c Release -r win-x64 --self-contained 
   `Span<T>` + `BinaryPrimitives`.
 - **AOT-compatible by default** (`IsAotCompatible=true`, `IsTrimmable=true`,
   `InvariantGlobalization=true`). Test projects opt out via
-  `Directory.Build.targets`.
+  `Directory.Build.targets`. `DngSharp.Dng.Sdk.Gpu` also opts out (ILGPU
+  JIT-compiles kernels via reflection) — keep it out of the AOT-published
+  Validate CLI's dependency graph.
+- **GPU kernels are mirrors, not sources of truth.** Every kernel in
+  `Gpu/GpuKernels.cs` ports a CPU routine (`Stage2Builder`,
+  `DemosaicBilinear`, `Stage3Renderer`, `HdrToneMapper`). Change the CPU
+  routine first, then the kernel, then run `tests/DngSharp.Dng.Sdk.Gpu.Tests`
+  (tolerance-based; see `docs/perf/phase10-gpu.md`). Opcode lists are not
+  ported — `GpuRenderPipeline.RenderToRgb8` assumes they are empty.
 - **Central Package Management:** add NuGet packages to
   `Directory.Packages.props`, never inline `<PackageReference Version=…>`.
 - **POD-style field surface is intentional** for types that mirror C++ layout
