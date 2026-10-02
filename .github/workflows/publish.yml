@@ -79,11 +79,22 @@ jobs:
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            label="${GITHUB_REF_NAME}"
           else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            label="${{ inputs.version }}"
           fi
+          echo "version=$label" >> "$GITHUB_OUTPUT"
+
+          # Assembly/package versions must be valid SemVer; strip the tag's
+          # leading "v" and wrap non-SemVer labels (e.g. "dev") into a
+          # 0.0.0-<label> prerelease version.
+          v="${label#v}"
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            v="0.0.0-${v//[^0-9A-Za-z.-]/-}"
+          fi
+          echo "semver=$v" >> "$GITHUB_OUTPUT"
 
       - name: AOT publish DngSharp.Dng.Validate (${{ matrix.rid }})
         run: >
@@ -92,6 +103,7 @@ jobs:
           -r ${{ matrix.rid }}
           --self-contained
           -p:PublishAot=true
+          -p:Version=${{ steps.version.outputs.semver }}
 
       - name: Package archive (${{ matrix.rid }})
         id: package
@@ -148,25 +160,22 @@ jobs:
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            label="${GITHUB_REF_NAME}"
           else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            label="${{ inputs.version }}"
           fi
+          echo "version=$label" >> "$GITHUB_OUTPUT"
 
-      # NuGet package versions must be valid SemVer; the tag's leading "v" is
-      # stripped, and non-SemVer manual labels (e.g. "dev") are wrapped into a
-      # 0.0.0-<label> prerelease version.
-      - name: Compute NuGet package version
-        id: nuget-version
-        shell: bash
-        run: |
-          v="${{ steps.version.outputs.version }}"
-          v="${v#v}"
+          # NuGet/assembly versions must be valid SemVer; strip the tag's
+          # leading "v" and wrap non-SemVer labels (e.g. "dev") into a
+          # 0.0.0-<label> prerelease version.
+          v="${label#v}"
           if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            v="0.0.0-$v"
+            v="0.0.0-${v//[^0-9A-Za-z.-]/-}"
           fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "semver=$v" >> "$GITHUB_OUTPUT"
 
       - name: Pack DngSharp.Dng.Sdk NuGet package
         shell: bash
@@ -174,7 +183,8 @@ jobs:
           set -euo pipefail
           mkdir -p dist/nuget
           dotnet pack "src/DngSharp.Dng.Sdk.Package/DngSharp.Dng.Sdk.Package.csproj" -c Release -o dist/nuget \
-            -p:PackageVersion=${{ steps.nuget-version.outputs.version }}
+            -p:Version=${{ steps.version.outputs.semver }} \
+            -p:PackageVersion=${{ steps.version.outputs.semver }}
 
       - name: Upload NuGet packages artifact
         uses: actions/upload-artifact@v4
@@ -231,18 +241,30 @@ jobs:
         id: version
         shell: bash
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "push" ]; then
-            echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            label="${GITHUB_REF_NAME}"
           else
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            label="${{ inputs.version }}"
           fi
+          echo "version=$label" >> "$GITHUB_OUTPUT"
+
+          # Assembly versions must be valid SemVer; strip the tag's leading
+          # "v" and wrap non-SemVer labels (e.g. "dev") into a 0.0.0-<label>
+          # prerelease version.
+          v="${label#v}"
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            v="0.0.0-${v//[^0-9A-Za-z.-]/-}"
+          fi
+          echo "semver=$v" >> "$GITHUB_OUTPUT"
 
       - name: Build DngSharp.Dng.Sdk* class libraries (${{ matrix.rid }})
         shell: bash
         run: |
           set -euo pipefail
           for proj in DngSharp.Dng.Sdk DngSharp.Dng.Sdk.Jpeg DngSharp.Dng.Sdk.Jxl DngSharp.Dng.Sdk.Xmp DngSharp.Dng.Sdk.Preview; do
-            dotnet build "src/$proj/$proj.csproj" -c Release
+            dotnet build "src/$proj/$proj.csproj" -c Release \
+              -p:Version=${{ steps.version.outputs.semver }}
           done
 
       - name: Collect and package DLLs (${{ matrix.rid }})
