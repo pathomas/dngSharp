@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -85,7 +86,7 @@ public static class MapTableOpcode
     /// Apply the decoded lookup table to <paramref name="image"/> in place.
     /// No-op if the opcode's area doesn't overlap the image.
     /// </summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -101,22 +102,28 @@ public static class MapTableOpcode
         uint colPitch = p.AreaSpec.ColPitch;
 
         var buf = image.Buffer;
-        var pixels = MemoryMarshal.Cast<byte, ushort>(buf.AsByteSpan());
         var table = p.Table;
 
         uint planeStart = p.AreaSpec.Plane;
         uint planeEnd = System.Math.Min(p.AreaSpec.Plane + p.AreaSpec.Planes, image.Planes);
 
-        for (uint plane = planeStart; plane < planeEnd; plane++)
+        uint rows = (overlap.H + rowPitch - 1) / rowPitch;
+
+        RowBandRunner.Run(rows, host, (rowStart, rowEnd) =>
         {
-            for (int row = overlap.T; row < overlap.B; row += (int)rowPitch)
+            var pixels = MemoryMarshal.Cast<byte, ushort>(buf.AsByteSpan());
+            for (uint plane = planeStart; plane < planeEnd; plane++)
             {
-                for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                for (uint rowIdx = rowStart; rowIdx < rowEnd; rowIdx++)
                 {
-                    long idx = buf.OffsetBytes(row, col, plane) / sizeof(ushort);
-                    pixels[(int)idx] = table[pixels[(int)idx]];
+                    int row = overlap.T + (int)(rowIdx * rowPitch);
+                    for (int col = overlap.L; col < overlap.R; col += (int)colPitch)
+                    {
+                        long idx = buf.OffsetBytes(row, col, plane) / sizeof(ushort);
+                        pixels[(int)idx] = table[pixels[(int)idx]];
+                    }
                 }
             }
-        }
+        });
     }
 }

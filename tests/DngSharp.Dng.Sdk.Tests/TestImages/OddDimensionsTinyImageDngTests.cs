@@ -41,7 +41,7 @@ public class OddDimensionsTinyImageDngTests
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(jpegPath));
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
 
             // No off-by-one padding/truncation: the rendered image must be
@@ -77,7 +77,7 @@ public class OddDimensionsTinyImageDngTests
             int exitCode = Cli.Run(["-jpeg", jpegPath, dngPath]);
             Assert.Equal(0, exitCode);
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             Assert.Equal(1, bitmap.Width);
             Assert.Equal(1, bitmap.Height);
@@ -116,7 +116,7 @@ public class OddDimensionsTinyImageDngTests
             int exitCode = Cli.Run(["-jpeg", jpegPath, dngPath]);
             Assert.Equal(0, exitCode);
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             Assert.Equal(width, bitmap.Width);
             Assert.Equal(height, bitmap.Height);

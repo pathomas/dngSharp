@@ -1,6 +1,8 @@
 using DngSharp.Dng.Sdk.Imaging;
 using DngSharp.Dng.Sdk.Primitives;
 
+using DngSharp.Dng.Sdk.Pixels;
+
 namespace DngSharp.Dng.Sdk.Pipeline;
 
 /// <summary>
@@ -27,22 +29,9 @@ public static class ImageCrop
 
         var dst = new SimpleImage(new DngRect(clipped.Size), src.Planes, src.PixelType);
 
-        var srcTile = src.GetTile(clipped);
-        var dstTile = dst.GetTile(dst.Bounds);
-
-        int rowBytes = (int)clipped.W * dstTile.PixelSize * (int)src.Planes;
-        int srcRowStride = (int)(srcTile.RowStep * srcTile.PixelSize);
-        int dstRowStride = (int)(dstTile.RowStep * dstTile.PixelSize);
-        var srcSpan = srcTile.AsByteSpan();
-        var dstSpan = dstTile.AsByteSpan();
-
-        for (int r = 0; r < (int)clipped.H; r++)
-        {
-            srcSpan.Slice(r * srcRowStride, rowBytes)
-                   .CopyTo(dstSpan.Slice(r * dstRowStride, rowBytes));
-        }
-
-        dst.WriteTile(dstTile);
+        // Relabel the destination's area with the source coordinates so the
+        // layout-agnostic copy lines rows/planes up regardless of storage order.
+        PixelKernels.Copy(src.GetTile(clipped), dst.Buffer.WithArea(clipped));
         return dst;
     }
 }

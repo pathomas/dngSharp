@@ -27,4 +27,8 @@
     <ProjectReference Include="..\..\src\DngSharp.Dng.Validate\DngSharp.Dng.Validate.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\MultiStripDngFactory.cs" Link="TestSupport\MultiStripDngFactory.cs" />
+  </ItemGroup>
+
 </Project>

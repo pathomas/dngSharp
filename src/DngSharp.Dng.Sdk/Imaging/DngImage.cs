@@ -38,8 +38,18 @@ public abstract class DngImage
 }
 
 /// <summary>
-/// Simplest <see cref="DngImage"/>: a single contiguous interleaved buffer
-/// big enough to hold the whole image. Mirrors <c>dng_simple_image</c>.
+/// Simplest <see cref="DngImage"/>: a single contiguous buffer big enough to
+/// hold the whole image. Mirrors <c>dng_simple_image</c>.
+///
+/// <para>Storage is <b>planar</b> (SoA): each plane is a contiguous
+/// row-major block (<c>ColStep = 1</c>, <c>RowStep = W</c>,
+/// <c>PlaneStep = W·H</c>). Per-plane rows are therefore contiguous, which
+/// lets SIMD kernels operate on a row without de-interleaving. Codecs and
+/// 8-bit RGB encoders still speak the interleaved on-disk order; the
+/// conversion happens in <see cref="Pixels.PixelKernels.Copy"/> at the
+/// <see cref="WriteTile"/> boundary. Code must address samples through
+/// <see cref="PixelBuffer.OffsetBytes"/> / the step counts, never by
+/// assuming <c>(row*W+col)*Planes+plane</c>.</para>
 /// </summary>
 public sealed class SimpleImage : DngImage
 {
@@ -57,7 +67,7 @@ public sealed class SimpleImage : DngImage
             DngThrow.Overflow($"SimpleImage size {required} > int.MaxValue; use a tiled image instead");
 
         _data = new byte[required];
-        _whole = PixelBuffer.Interleaved(bounds, planes, pixelType, _data);
+        _whole = PixelBuffer.Planar(bounds, planes, pixelType, _data);
     }
 
     /// <summary>The full-image pixel buffer. Cheaper than <see cref="GetTile"/> for whole-image ops.</summary>
@@ -97,17 +107,6 @@ public sealed class SimpleImage : DngImage
         if (source.Planes != Planes)
             DngThrow.ProgramError($"Planes mismatch: source={source.Planes}, image={Planes}");
 
-        var dst = GetTile(source.Area);
-        // Both buffers are interleaved with identical layout; copy row-by-row.
-        int rowBytes = (int)source.Area.W * source.PixelSize * (int)source.Planes;
-        int srcRowStride = (int)(source.RowStep * source.PixelSize);
-        int dstRowStride = (int)(dst.RowStep * dst.PixelSize);
-        var srcSpan = source.AsByteSpan();
-        var dstSpan = dst.AsByteSpan();
-        for (int r = 0; r < source.Area.H; r++)
-        {
-            srcSpan.Slice(r * srcRowStride, rowBytes)
-                   .CopyTo(dstSpan.Slice(r * dstRowStride, rowBytes));
-        }
+        PixelKernels.Copy(source, GetTile(source.Area));
     }
 }

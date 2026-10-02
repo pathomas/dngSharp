@@ -71,7 +71,7 @@ public class GradientDngTests
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(jpegPath));
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             Assert.Equal(Width, bitmap.Width);
             Assert.Equal(Height, bitmap.Height);
@@ -173,7 +173,7 @@ public class GradientDngTests
             File.WriteAllBytes(dngPath, dngBytes);
             Cli.Run(["-jpeg", jpegPath, dngPath]);
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             var px = bitmap.GetPixel(0, Height / 2);
             double leftBrightness = (px.Red + px.Green + px.Blue) / 3.0;
 

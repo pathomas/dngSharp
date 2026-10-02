@@ -21,20 +21,11 @@ public sealed class UncompressedEncoder : IRawEncoder
         if (total > int.MaxValue)
             throw new DngException(DngError.Overflow, $"Uncompressed: payload {total} > int.MaxValue");
 
-        var output = new byte[(int)total];
-        var src = source.Memory.Span;
+        // Pack to the on-disk interleaved order regardless of source layout.
+        var output = PixelKernels.ToInterleavedBytes(source);
 
-        int rowBytes = (int)(source.Area.W * source.Planes * source.PixelSize);
-        for (int row = 0; row < source.Area.H; row++)
-        {
-            long srcOff = source.OffsetBytes(source.Area.T + row, source.Area.L);
-            var srcRow = src.Slice((int)srcOff, rowBytes);
-            var dstRow = output.AsSpan(row * rowBytes, rowBytes);
-            srcRow.CopyTo(dstRow);
-
-            if (bigEndian && source.PixelSize > 1)
-                SwapInPlace(dstRow, source.PixelSize);
-        }
+        if (bigEndian && source.PixelSize > 1)
+            SwapInPlace(output, source.PixelSize);
         return output;
     }
 

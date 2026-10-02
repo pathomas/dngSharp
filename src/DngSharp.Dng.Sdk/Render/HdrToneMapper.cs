@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 using DngSharp.Dng.Sdk.Imaging;
 using DngSharp.Dng.Sdk.Pipeline;
@@ -122,7 +123,7 @@ public static class HdrToneMapper
             profileToneCurve = null; // degenerate curve → fall back to Reinhard
 
         var task = new ToneMapTask(image, profileToneCurve, host?.MaxTileEdgePixels ?? 256);
-        AreaTaskRunner.Run(task, image.Bounds, host?.Sniffer);
+        AreaTaskRunner.Run(task, image.Bounds, host);
     }
 
     // ── Piecewise-linear tone curve lookup ────────────────────────────────────
@@ -170,6 +171,26 @@ public static class HdrToneMapper
         {
             var buf = image.GetTile(tile);
             var bytes = buf.Memory.Span;
+
+            if (curve is not null && buf.HasContiguousRows)
+            {
+                // Planar fast path: each plane-row is one contiguous float
+                // span, so walk it directly instead of computing a byte offset
+                // per sample. Same per-channel curve evaluation as below.
+                var floats = MemoryMarshal.Cast<byte, float>(bytes);
+                int count = (int)(tile.R - tile.L);
+                for (uint p = 0; p < image.Planes; p++)
+                {
+                    for (int row = tile.T; row < tile.B; row++)
+                    {
+                        var span = floats.Slice((int)(buf.OffsetBytes(row, tile.L, p) / 4), count);
+                        for (int k = 0; k < count; k++)
+                            span[k] = (float)EvaluateCurve(span[k], curve);
+                    }
+                }
+
+                return;
+            }
 
             for (int row = tile.T; row < tile.B; row++)
             {

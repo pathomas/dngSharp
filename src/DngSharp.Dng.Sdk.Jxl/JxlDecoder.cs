@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Codecs;
 using DngSharp.Dng.Sdk.Errors;
@@ -18,7 +19,9 @@ namespace DngSharp.Dng.Sdk.Jxl;
 /// <para><b>Thread safety:</b> a single <see cref="JxlDecoder"/> instance
 /// creates a new native decoder handle per call to <see cref="Decode"/> and
 /// destroys it before returning, so the same instance is safe to share across
-/// threads (each call is independent).</para>
+/// threads (each call is independent). The input and output buffers are
+/// pinned for the duration of each decode, since libjxl reads and writes
+/// through them across its internal state-machine steps.</para>
 /// </summary>
 public sealed class JxlDecoder : IRawDecoder
 {
@@ -81,9 +84,31 @@ public sealed class JxlDecoder : IRawDecoder
         }
     }
 
-    private static void DecodeCore(
+    private static unsafe void DecodeCore(
         nint dec,
         ReadOnlySpan<byte> compressed,
+        PixelBuffer destination,
+        bool bigEndian)
+    {
+        // libjxl retains the raw pointers it is handed by JxlDecoderSetInput /
+        // JxlDecoderSetImageOutBuffer and reads/writes through them during the
+        // later JxlDecoderProcessInput calls. Both buffers live on the managed
+        // heap, so they must stay pinned for the whole decode — otherwise a GC
+        // relocation mid-decode leaves libjxl dereferencing a stale address,
+        // which surfaces intermittently as a bogus decoder error status or a
+        // hard process crash.
+        fixed (byte* pInput = compressed)
+        fixed (byte* pOutput = destination.Memory.Span)
+        {
+            DecodeCorePinned(dec, pInput, compressed.Length, pOutput, destination, bigEndian);
+        }
+    }
+
+    private static unsafe void DecodeCorePinned(
+        nint dec,
+        byte* pInput,
+        int inputLength,
+        byte* pOutput,
         PixelBuffer destination,
         bool bigEndian)
     {
@@ -95,7 +120,7 @@ public sealed class JxlDecoder : IRawDecoder
             throw new DngException(DngError.JxlDecoder, $"JxlDecoderSubscribeEvents failed: {st}");
 
         // Feed the entire payload at once and signal end-of-input.
-        st = LibJxl.JxlDecoderSetInput(dec, ref MemoryMarshal.GetReference(compressed), (nuint)compressed.Length);
+        st = LibJxl.JxlDecoderSetInput(dec, ref Unsafe.AsRef<byte>(pInput), (nuint)inputLength);
         if (st != LibJxl.JxlDecoderStatus.Success)
             throw new DngException(DngError.JxlDecoder, $"JxlDecoderSetInput failed: {st}");
         LibJxl.JxlDecoderCloseInput(dec);
@@ -158,8 +183,9 @@ public sealed class JxlDecoder : IRawDecoder
                             + $"destination has {expectedBytes}");
 
                     // Wire the destination memory directly — no extra copy.
+                    // pOutput is the pinned destination buffer.
                     st = LibJxl.JxlDecoderSetImageOutBuffer(
-                        dec, ref fmt, ref MemoryMarshal.GetReference(destination.Memory.Span), requiredBytes);
+                        dec, ref fmt, ref Unsafe.AsRef<byte>(pOutput), requiredBytes);
                     if (st != LibJxl.JxlDecoderStatus.Success)
                         throw new DngException(DngError.JxlDecoder, $"JxlDecoderSetImageOutBuffer failed: {st}");
                     break;

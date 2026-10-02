@@ -123,11 +123,13 @@ public class Stage3RendererTests
         var stage3 = new SimpleImage(new DngRect(0, 0, 1, width), 3, PixelType.Float32);
         var tile = stage3.GetTile(stage3.Bounds);
         var samples = tile.AsTypedSpan<float>();
+        // Address samples through the layout-neutral OffsetBytes API.
+        static int Idx(PixelBuffer b, int col, uint plane) => (int)(b.OffsetBytes(0, col, plane) / 4);
         for (int i = 0; i < width; i++)
         {
-            samples[i * 3] = i * 0.001f;
-            samples[i * 3 + 1] = i * 0.002f;
-            samples[i * 3 + 2] = i * 0.0005f;
+            samples[Idx(tile, i, 0)] = i * 0.001f;
+            samples[Idx(tile, i, 1)] = i * 0.002f;
+            samples[Idx(tile, i, 2)] = i * 0.0005f;
         }
         stage3.WriteTile(tile);
 
@@ -146,14 +148,14 @@ public class Stage3RendererTests
 
         for (int i = 0; i < width; i++)
         {
-            double r = samples[i * 3], g = samples[i * 3 + 1], b = samples[i * 3 + 2];
+            double r = samples[Idx(tile, i, 0)], g = samples[Idx(tile, i, 1)], b = samples[Idx(tile, i, 2)];
             double or = (combined[0, 0] * r + combined[0, 1] * g + combined[0, 2] * b) * expScale;
             double og = (combined[1, 0] * r + combined[1, 1] * g + combined[1, 2] * b) * expScale;
             double ob = (combined[2, 0] * r + combined[2, 1] * g + combined[2, 2] * b) * expScale;
 
-            Assert.Equal((float)or, outSpan[i * 3], 3);
-            Assert.Equal((float)og, outSpan[i * 3 + 1], 3);
-            Assert.Equal((float)ob, outSpan[i * 3 + 2], 3);
+            Assert.Equal((float)or, outSpan[Idx(outTile, i, 0)], 3);
+            Assert.Equal((float)og, outSpan[Idx(outTile, i, 1)], 3);
+            Assert.Equal((float)ob, outSpan[Idx(outTile, i, 2)], 3);
         }
     }
 

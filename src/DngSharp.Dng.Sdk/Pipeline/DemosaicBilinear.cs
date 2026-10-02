@@ -34,7 +34,8 @@ public static class DemosaicBilinear
     /// Demosaic <paramref name="stage2"/> using the pattern described in
     /// <paramref name="mosaic"/>. Returns a new 3-plane Float32 image.
     /// </summary>
-    public static SimpleImage Build(DngImage stage2, MosaicInfo mosaic)
+    /// <param name="host">Optional host for cancellation and thread count.</param>
+    public static SimpleImage Build(DngImage stage2, MosaicInfo mosaic, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(stage2);
         ArgumentNullException.ThrowIfNull(mosaic);
@@ -51,7 +52,7 @@ public static class DemosaicBilinear
 
         var output = new SimpleImage(stage2.Bounds, 3, PixelType.Float32);
         var task = new BilinearTask(stage2, output, mosaic.CfaPlaneColor);
-        AreaTaskRunner.Run(task, stage2.Bounds, sniffer: null);
+        AreaTaskRunner.Run(task, stage2.Bounds, host);
         return output;
     }
 

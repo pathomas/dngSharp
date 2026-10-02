@@ -83,7 +83,7 @@ public class CheckerboardDngTests
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(jpegPath));
 
-            var bitmap = SKBitmap.Decode(jpegPath);
+            var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             Assert.Equal(Width, bitmap.Width);
             Assert.Equal(Height, bitmap.Height);

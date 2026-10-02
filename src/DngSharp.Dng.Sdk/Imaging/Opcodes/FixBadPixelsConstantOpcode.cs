@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -59,7 +60,7 @@ public static class FixBadPixelsConstantOpcode
         (((uint)row + (uint)col + bayerPhase + (bayerPhase >> 1)) & 1) == 0;
 
     /// <summary>Apply the fix in place to a single-plane, UInt16 Bayer image.</summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -76,58 +77,70 @@ public static class FixBadPixelsConstantOpcode
         var bounds = image.Bounds;
 
         var buf = image.Buffer;
-        var pixels = MemoryMarshal.Cast<byte, ushort>(buf.AsByteSpan());
 
         // Collect fixes first so a repaired pixel doesn't feed into a
         // neighboring pixel's average within the same pass (matches native,
         // which reads from a separate untouched srcBuffer while writing to
-        // dstBuffer).
-        var writes = new List<(int Row, int Col, ushort Value)>();
+        // dstBuffer). The scan is read-only and banded across threads; each
+        // band appends to its own list and the writes are applied serially.
+        var bandWrites = new System.Collections.Concurrent.ConcurrentBag<List<(int Row, int Col, ushort Value)>>();
 
-        Span<(int dr, int dc)> greenOffsets = [(-1, -1), (-1, 1), (1, -1), (1, 1)];
-        Span<(int dr, int dc)> otherOffsets = [(-2, 0), (2, 0), (0, -2), (0, 2)];
-
-        for (int row = bounds.T; row < bounds.B; row++)
+        RowBandRunner.Run(bounds.T, bounds.B, host, (rowStart, rowEnd) =>
         {
-            for (int col = bounds.L; col < bounds.R; col++)
+            var pixels = MemoryMarshal.Cast<byte, ushort>(buf.AsByteSpan());
+            var writes = new List<(int Row, int Col, ushort Value)>();
+
+            Span<(int dr, int dc)> greenOffsets = [(-1, -1), (-1, 1), (1, -1), (1, 1)];
+            Span<(int dr, int dc)> otherOffsets = [(-2, 0), (2, 0), (0, -2), (0, 2)];
+
+            for (int row = rowStart; row < rowEnd; row++)
             {
-                long selfIdx = buf.OffsetBytes(row, col, 0) / sizeof(ushort);
-                if (pixels[(int)selfIdx] != badPixel) continue;
-
-                uint count = 0;
-                uint total = 0;
-
-                var offsets = IsGreen(row, col, p.BayerPhase) ? greenOffsets : otherOffsets;
-
-                foreach (var (dr, dc) in offsets)
+                for (int col = bounds.L; col < bounds.R; col++)
                 {
-                    int r = row + dr;
-                    int c = col + dc;
-                    if (r < bounds.T || r >= bounds.B || c < bounds.L || c >= bounds.R) continue;
+                    long selfIdx = buf.OffsetBytes(row, col, 0) / sizeof(ushort);
+                    if (pixels[(int)selfIdx] != badPixel) continue;
 
-                    long idx = buf.OffsetBytes(r, c, 0) / sizeof(ushort);
-                    ushort v = pixels[(int)idx];
-                    if (v == badPixel) continue;
+                    uint count = 0;
+                    uint total = 0;
 
-                    count++;
-                    total += v;
-                }
+                    var offsets = IsGreen(row, col, p.BayerPhase) ? greenOffsets : otherOffsets;
 
-                if (count == 4)
-                {
-                    writes.Add((row, col, (ushort)((total + 2) >> 2)));
-                }
-                else if (count > 0)
-                {
-                    writes.Add((row, col, (ushort)((total + (count >> 1)) / count)));
+                    foreach (var (dr, dc) in offsets)
+                    {
+                        int r = row + dr;
+                        int c = col + dc;
+                        if (r < bounds.T || r >= bounds.B || c < bounds.L || c >= bounds.R) continue;
+
+                        long idx = buf.OffsetBytes(r, c, 0) / sizeof(ushort);
+                        ushort v = pixels[(int)idx];
+                        if (v == badPixel) continue;
+
+                        count++;
+                        total += v;
+                    }
+
+                    if (count == 4)
+                    {
+                        writes.Add((row, col, (ushort)((total + 2) >> 2)));
+                    }
+                    else if (count > 0)
+                    {
+                        writes.Add((row, col, (ushort)((total + (count >> 1)) / count)));
+                    }
                 }
             }
-        }
 
-        foreach (var (r, c, v) in writes)
+            if (writes.Count > 0) bandWrites.Add(writes);
+        });
+
+        var allPixels = MemoryMarshal.Cast<byte, ushort>(buf.AsByteSpan());
+        foreach (var writes in bandWrites)
         {
-            long idx = buf.OffsetBytes(r, c, 0) / sizeof(ushort);
-            pixels[(int)idx] = v;
+            foreach (var (r, c, v) in writes)
+            {
+                long idx = buf.OffsetBytes(r, c, 0) / sizeof(ushort);
+                allPixels[(int)idx] = v;
+            }
         }
     }
 }

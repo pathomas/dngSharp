@@ -15,6 +15,8 @@ public static class Program
 {
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "corpus")
+            return CorpusBenchmark.Run(args[1..]);
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
         return 0;
     }

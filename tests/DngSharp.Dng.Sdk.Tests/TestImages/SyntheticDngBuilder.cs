@@ -114,9 +114,11 @@ public static class SyntheticDngBuilder
                     DngTagCode.ActiveArea, [top, left, bottom, right], be));
 
                 // DefaultCropOrigin/Size are [H, V] (x, y) order, unlike
-                // ActiveArea's [top, left, bottom, right] order.
+                // ActiveArea's [top, left, bottom, right] order — and the
+                // origin is relative to ActiveArea's top-left, so selecting
+                // the whole active area is [0, 0].
                 ifd.Entries.Add(TagBuilder.UInt32Array(
-                    DngTagCode.DefaultCropOrigin, [(uint)margin, (uint)margin], be));
+                    DngTagCode.DefaultCropOrigin, [0u, 0u], be));
                 ifd.Entries.Add(TagBuilder.UInt32Array(
                     DngTagCode.DefaultCropSize, [(uint)innerSize, (uint)innerSize], be));
             });

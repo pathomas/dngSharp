@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using DngSharp.Dng.Sdk.Errors;
 using DngSharp.Dng.Sdk.Pixels;
 using DngSharp.Dng.Sdk.Primitives;
+using DngSharp.Dng.Sdk.Pipeline;
 
 namespace DngSharp.Dng.Sdk.Imaging.Opcodes;
 
@@ -79,7 +80,7 @@ public static class ScalePerColumnOpcode
     /// if the opcode's area doesn't overlap the image, or if the table is
     /// empty (e.g. an empty area spec).
     /// </summary>
-    public static void Apply(SimpleImage image, Params p)
+    public static void Apply(SimpleImage image, Params p, DngHost? host = null)
     {
         ArgumentNullException.ThrowIfNull(image);
         ArgumentNullException.ThrowIfNull(p);
@@ -98,37 +99,41 @@ public static class ScalePerColumnOpcode
         uint cols = CeilDiv(overlap.W, colPitch);
 
         var buf = image.Buffer;
-        var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
 
         uint planeStart = p.AreaSpec.Plane;
         uint planeEnd = System.Math.Min(p.AreaSpec.Plane + p.AreaSpec.Planes, image.Planes);
 
-        for (uint plane = planeStart; plane < planeEnd; plane++)
+        // Columns whose table index would fall past the end of the table
+        // are left untouched (the serial loop broke out at that point).
+        int tableStart = (overlap.L - p.AreaSpec.Area.L) / (int)colPitch;
+        uint effectiveCols = (uint)System.Math.Clamp((long)p.Scales.Length - tableStart, 0, cols);
+        if (effectiveCols == 0) return;
+
+        // Row-major traversal so rows can be banded across threads; each
+        // pixel's result depends only on itself and its column's table entry.
+        RowBandRunner.Run(rows, host, (rowStart, rowEnd) =>
         {
-            int tableStart = (overlap.L - p.AreaSpec.Area.L) / (int)colPitch;
-
-            int col = overlap.L;
-            for (uint colIdx = 0; colIdx < cols; colIdx++)
+            var floats = MemoryMarshal.Cast<byte, float>(buf.AsByteSpan());
+            for (uint plane = planeStart; plane < planeEnd; plane++)
             {
-                int tableIdx = tableStart + (int)colIdx;
-                if ((uint)tableIdx >= (uint)p.Scales.Length) break;
-
-                float colScale = p.Scales[tableIdx];
-
-                int row = overlap.T;
-                for (uint rowIdx = 0; rowIdx < rows; rowIdx++)
+                for (uint rowIdx = rowStart; rowIdx < rowEnd; rowIdx++)
                 {
-                    long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
-                    float x = floats[(int)idx];
-                    float y = float.Clamp(x * colScale, -1.0f, 1.0f);
-                    floats[(int)idx] = y;
+                    int row = overlap.T + (int)(rowIdx * rowPitch);
 
-                    row += (int)rowPitch;
+                    int col = overlap.L;
+                    for (uint colIdx = 0; colIdx < effectiveCols; colIdx++)
+                    {
+                        float colScale = p.Scales[tableStart + (int)colIdx];
+                        long idx = buf.OffsetBytes(row, col, plane) / sizeof(float);
+                        float x = floats[(int)idx];
+                        float y = float.Clamp(x * colScale, -1.0f, 1.0f);
+                        floats[(int)idx] = y;
+
+                        col += (int)colPitch;
+                    }
                 }
-
-                col += (int)colPitch;
             }
-        }
+        });
     }
 
     private static uint CeilDiv(uint numerator, uint denominator) =>

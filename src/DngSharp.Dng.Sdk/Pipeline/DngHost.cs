@@ -47,4 +47,13 @@ public sealed class DngHost
     /// per-tile overhead.
     /// </summary>
     public int MaxTileEdgePixels { get; set; } = 256;
+
+    /// <summary>
+    /// Maximum number of worker threads used for parallel pixel work
+    /// (tile dispatch, strip/tile decode). <c>null</c> means
+    /// <see cref="Environment.ProcessorCount"/>. Set to <c>1</c> for a fully
+    /// serial, deterministic-ordering run (useful for golden diffs and
+    /// scaling benchmarks).
+    /// </summary>
+    public int? MaxThreads { get; set; }
 }

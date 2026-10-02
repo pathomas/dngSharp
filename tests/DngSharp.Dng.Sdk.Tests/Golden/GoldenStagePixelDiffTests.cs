@@ -171,7 +171,8 @@ public class GoldenStagePixelDiffTests
             double maxAbs = 0;
             for (int i = 0; i < n; i++)
             {
-                double managedValue = ReadRawSample(managedBytes, i, managed.PixelType, sampleSize);
+                double managedValue = ReadRawSample(
+                    managedBytes, GoldenSampleIndexer.SampleIndex(tile, i), managed.PixelType, sampleSize);
                 double diff = System.Math.Abs(managedValue - nativeRaw[i]);
                 if (diff > maxAbs) maxAbs = diff;
             }
@@ -193,7 +194,7 @@ public class GoldenStagePixelDiffTests
         float maxAbsF = 0;
         for (int i = 0; i < n; i++)
         {
-            float managedValue = BinaryPrimitives.ReadSingleLittleEndian(managedBytes.Slice(i * 4, 4));
+            float managedValue = GoldenSampleIndexer.ReadFloat32(managedBytes, tile, i);
             float diff = System.Math.Abs(managedValue - nativeFloat[i]);
             if (diff > maxAbsF) maxAbsF = diff;
         }

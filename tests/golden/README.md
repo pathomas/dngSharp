@@ -77,3 +77,13 @@ fixture, capture its native output the same way, and add a test in
 `Stage2_fixvignetteradial_matches_native()` (run the opcode through whichever
 applier stage the opcode lives in — List2 for Stage 2, List3 for Stage 3 —
 and diff against the captured `.tif`).
+
+## Self-contained pipeline golden (no native binary required)
+
+`tests/DngSharp.Dng.Sdk.Tests/Golden/GoldenParallelPipelineTests.cs` pins MD5
+fingerprints of the CLI's `-1 -2 -3 -jpeg` outputs for three deterministic
+in-memory `SyntheticDngBuilder` fixtures, and asserts that `-threads 1` and
+the default (all-cores) run produce identical bytes that match the pins. It
+runs in CI on every checkout — no `dng_validate` or `sample_files` needed.
+After an intentional pipeline change, run the test and copy the `actual:`
+fingerprints from the failure message into the `Golden` table.

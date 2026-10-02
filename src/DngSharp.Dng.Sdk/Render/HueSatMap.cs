@@ -54,6 +54,27 @@ public sealed class HueSatMap
 
     private HsbModify this[int hueIndex, int satIndex] => _deltas[hueIndex * SatDivisions + satIndex];
 
+    /// <summary>Number of table entries (<c>HueDivisions × SatDivisions × ValDivisions</c>).</summary>
+    public int EntryCount => _deltas.Length;
+
+    /// <summary>
+    /// Copy the table as flat floats — <c>(hueShift, satScale, valScale)</c>
+    /// per entry, in native storage order
+    /// <c>index = (val*HueDivisions + hue)*SatDivisions + sat</c> — so
+    /// alternate back-ends (e.g. GPU kernels) can upload it verbatim.
+    /// </summary>
+    public void CopyTo(Span<float> destination)
+    {
+        if (destination.Length < _deltas.Length * 3)
+            throw new ArgumentException($"Destination too short: need {_deltas.Length * 3} floats.", nameof(destination));
+        for (int i = 0; i < _deltas.Length; i++)
+        {
+            destination[i * 3]     = _deltas[i].HueShift;
+            destination[i * 3 + 1] = _deltas[i].SatScale;
+            destination[i * 3 + 2] = _deltas[i].ValScale;
+        }
+    }
+
     /// <summary>
     /// Blend two tables at the same dimensions, matching
     /// <c>dng_hue_sat_map::Interpolate</c> (linear blend of every delta by

@@ -70,7 +70,7 @@ public class CircleDngTests
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(jpegPath));
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             Assert.Equal(Size, bitmap.Width);
             Assert.Equal(Size, bitmap.Height);

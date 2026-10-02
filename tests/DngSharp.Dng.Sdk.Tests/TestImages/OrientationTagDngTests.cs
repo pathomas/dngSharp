@@ -44,7 +44,7 @@ public class OrientationTagDngTests
             Assert.Equal(0, exitCode);
             Assert.True(File.Exists(jpegPath));
 
-            using var bitmap = SKBitmap.Decode(jpegPath);
+            using var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
 
             // Documents current scope: dimensions are never swapped for any
@@ -112,7 +112,7 @@ public class OrientationTagDngTests
             File.WriteAllBytes(dngPath, dngBytes);
             int exitCode = Cli.Run(["-jpeg", jpegPath, dngPath]);
             Assert.Equal(0, exitCode);
-            var bitmap = SKBitmap.Decode(jpegPath);
+            var bitmap = SKBitmap.Decode(File.ReadAllBytes(jpegPath));
             Assert.NotNull(bitmap);
             return bitmap;
         }

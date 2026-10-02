@@ -135,6 +135,45 @@ public class LosslessJpegDecoderTests
             new LosslessJpegDecoder().Decode(bytes, buf, bigEndian: false));
     }
 
+    /// <summary>
+    /// DNG writers routinely encode a single-plane tile as
+    /// <c>width/2 × 2 components</c>. The decoder must lay the samples down
+    /// in flat raster order (component index becomes the next column), not
+    /// map component → plane — with <c>Planes == 1</c> the latter overwrote
+    /// the neighbouring column and left the right half of every tile zero.
+    /// </summary>
+    [Fact]
+    public void Two_component_scan_fills_single_plane_tile_in_raster_order()
+    {
+        var bytes = new List<byte>();
+        bytes.AddRange([0xFF, 0xD8]);
+        // SOF3: precision 8, height 1, width 2, Nf = 2.
+        bytes.AddRange([0xFF, 0xC3, 0, 14, 8, 0, 1, 0, 2, 2]);
+        bytes.AddRange([1, 0x11, 0]);
+        bytes.AddRange([2, 0x11, 0]);
+        // DHT: two codes of length 2 → "00" = SSSS 0, "01" = SSSS 1.
+        bytes.AddRange([0xFF, 0xC4, 0, 21, 0x00]);
+        bytes.AddRange([0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.AddRange([0, 1]);
+        // SOS: Ns = 2, both components use table 0, predictor 1.
+        bytes.AddRange([0xFF, 0xDA, 0, 10, 2, 1, 0x00, 2, 0x00, 1, 0, 0]);
+        // Entropy (MSB-first):
+        //   px0 c0: 01 1 → 128+1 = 129
+        //   px0 c1: 01 1 → 128+1 = 129
+        //   px1 c0: 01 1 → Ra(c0)=129 +1 = 130
+        //   px1 c1: 00   → Ra(c1)=129    = 129
+        //   011 011 011 00 → 0110 1101 100(00000) = 0x6D 0x80
+        bytes.AddRange([0x6D, 0x80]);
+        bytes.AddRange([0xFF, 0xD9]);
+
+        // Destination: 4×1, one plane.
+        var dst = new byte[4];
+        var buf = PixelBuffer.Interleaved(new DngRect(0, 0, 1, 4), 1, PixelType.UInt8, dst);
+        new LosslessJpegDecoder().Decode(bytes.ToArray(), buf, bigEndian: false);
+
+        Assert.Equal(new byte[] { 129, 129, 130, 129 }, dst);
+    }
+
     private static byte[] MinimalConstantStream()
     {
         var bytes = new List<byte>();
