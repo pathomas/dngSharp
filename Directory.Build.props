@@ -26,7 +26,12 @@
         CA1720 — TIFF type identifiers (Short, Long, Float, Double) follow the
                  TIFF 6.0 specification; renaming would obscure spec semantics.
     -->
-    <NoWarn>$(NoWarn);CA1051;CA5351;CA1822;CA1062;CA1711;CA1720</NoWarn>
+    <!-- CS1591 — the port is still filling in XML docs; ship the generated
+         doc file without failing the build on undocumented members. -->
+    <NoWarn>$(NoWarn);CA1051;CA5351;CA1822;CA1062;CA1711;CA1720;CS1591</NoWarn>
+
+    <!-- Ship IntelliSense XML alongside the assemblies. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <!-- Hot paths (pixel buffers, linearization, demosaic, color transform) use
          pointers + Span<T>. Unsafe is enabled everywhere; reserve its use for
@@ -53,7 +58,14 @@
     <!-- Repo metadata -->
     <Company>dng-net contributors</Company>
     <Product>DngSharp.Dng.Sdk</Product>
+    <Copyright>Copyright (c) dng-net contributors</Copyright>
     <RepositoryUrl>https://github.com/pathomas/dngSharp</RepositoryUrl>
+
+    <!-- Source Link: the .NET SDK bundles Microsoft.SourceLink.GitHub, so only
+         these switches are needed to make the published symbols step into the
+         exact sources for a given commit. -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
 
     <!-- NuGet packaging defaults. Individual projects opt in with
          <IsPackable>true</IsPackable> + <PackageId>/<Description>. -->
@@ -63,6 +75,13 @@
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>dng;dngsdk;adobe-dng;raw-image;tiff</PackageTags>
+    <PackageReleaseNotes>See https://github.com/pathomas/dngSharp/releases for release notes.</PackageReleaseNotes>
+
+    <!-- Emit a .snupkg symbol package next to the .nupkg. Portable PDBs are
+         routed to the symbol package (NuGet filters .pdb out of the main
+         package's lib/ folder when IncludeSymbols is set). -->
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
 </Project>

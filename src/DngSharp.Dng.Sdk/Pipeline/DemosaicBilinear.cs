@@ -34,6 +34,8 @@ public static class DemosaicBilinear
     /// Demosaic <paramref name="stage2"/> using the pattern described in
     /// <paramref name="mosaic"/>. Returns a new 3-plane Float32 image.
     /// </summary>
+    /// <param name="stage2">Linearized single-plane CFA image to demosaic.</param>
+    /// <param name="mosaic">Mosaic layout describing the CFA pattern.</param>
     /// <param name="host">Optional host for cancellation and thread count.</param>
     public static SimpleImage Build(DngImage stage2, MosaicInfo mosaic, DngHost? host = null)
     {

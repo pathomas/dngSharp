@@ -18,7 +18,7 @@ namespace DngSharp.Dng.Sdk.Color;
 /// <para>This class handles the case-analysis (1 / 2 / 3 illuminants) and
 /// the <see cref="InterpolationWeight"/> calculation. The matrix-assembly
 /// path (<c>FindXYZtoCamera</c>, <c>FindCameraToPCS</c>) follows in a future
-/// pass once <see cref="ICameraProfileInterpolator"/> has full coverage of
+/// pass once <c>ICameraProfileInterpolator</c> has full coverage of
 /// hue-sat maps, look tables, and gain map evaluation; the spec semantics
 /// the interpolator depends on are captured here.</para>
 /// </summary>

@@ -31,7 +31,7 @@ namespace DngSharp.Dng.Sdk.Pipeline;
 /// </para>
 ///
 /// <para>The caller must register an <see cref="IRawDecoder"/> in
-/// <paramref name="registry"/> for the IFD's <c>Compression</c> tag before calling
+/// the decoder registry for the IFD's <c>Compression</c> tag before calling
 /// <see cref="ReadStage1"/>. For JXL files, register
 /// <c>DngSharp.Dng.Sdk.Jxl.JxlDecoder</c> from the <c>DngSharp.Dng.Sdk.Jxl</c> project.</para>
 /// </summary>

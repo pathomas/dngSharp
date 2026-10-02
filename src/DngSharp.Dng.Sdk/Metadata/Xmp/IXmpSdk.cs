@@ -57,8 +57,8 @@ public interface IXmpSdk : IDisposable
 
     /// <summary>
     /// Parse a UTF-8 RDF/XMP packet into the SDK's internal representation.
-    /// Returns a handle the caller can use with <see cref="GetProperty"/>
-    /// / <see cref="SerializePacket"/>.
+    /// Returns a handle the caller can use with <see cref="IXmpMeta.GetProperty"/>
+    /// / <see cref="IXmpMeta.SerializePacket"/>.
     /// </summary>
     IXmpMeta Parse(ReadOnlySpan<byte> packet);
 

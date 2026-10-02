@@ -46,9 +46,10 @@ public sealed class AbortSniffer
 /// <c>dng_area_task</c>.
 ///
 /// <para>The runner invokes <see cref="Process"/> on each tile rectangle
-/// returned by a <see cref="DngSharp.Dng.Sdk.Imaging.TileIterator"/> over
-/// <see cref="UnitArea"/>. Implementations must be thread-safe across tiles
-/// because <see cref="AreaTaskRunner.Run"/> dispatches tiles in parallel.</para>
+/// returned by a <see cref="DngSharp.Dng.Sdk.Imaging.TileIterator"/> over the
+/// requested area. Implementations must be thread-safe across tiles
+/// because <see cref="AreaTaskRunner.Run(IAreaTask, DngRect, DngSharp.Dng.Sdk.Pipeline.DngHost?)"/>
+/// dispatches tiles in parallel.</para>
 /// </summary>
 public interface IAreaTask
 {

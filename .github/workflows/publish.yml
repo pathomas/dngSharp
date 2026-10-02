@@ -190,16 +190,19 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dng-sdk-nuget
-          path: dist/nuget/*.nupkg
+          path: dist/nuget/*
           if-no-files-found: error
 
       - name: Publish NuGet packages to GitHub Packages
         shell: bash
         run: |
           set -euo pipefail
+          # --no-symbols: GitHub Packages rejects .snupkg symbol packages.
+          # They are attached to the GitHub Release instead.
           dotnet nuget push "dist/nuget/*.nupkg" \
             --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" \
             --api-key "${{ secrets.GITHUB_TOKEN }}" \
+            --no-symbols \
             --skip-duplicate
 
   # ── build DngSharp.Dng.Sdk* class libraries and package the DLLs per-RID ───────────

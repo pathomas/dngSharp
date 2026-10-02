@@ -35,15 +35,15 @@ public enum OutputColorSpace
 /// <para>Output: a <see cref="SimpleImage"/> with <see cref="PixelType.Float32"/>
 /// in a selectable <b>linear RGB output space</b> (sRGB by default). The caller
 /// must apply gamma encoding and clamp/quantize for display output (see
-/// <see cref="SrgbGamma"/> and <see cref="QuantizeToUInt8"/>).</para>
+/// <see cref="SrgbGamma"/> and <see cref="GammaAndQuantize"/>).</para>
 ///
 /// <para>Pipeline steps:
 /// <list type="number">
 ///   <item><b>Camera → XYZ_D50.</b> Multiply each RGB camera-space triple by
-///         <paramref name="cameraToXyzD50"/> (3×3 forward matrix).</item>
+///         the <c>cameraToXyzD50</c> 3×3 forward matrix.</item>
 ///   <item><b>Baseline exposure.</b> Scale by <c>2^baselineExposure</c>.</item>
 ///   <item><b>Optional tone curve.</b> Apply per-channel 1-D lookup (monotone
-///         function). If <paramref name="toneCurve"/> is null, skip.</item>
+///         function). If the <c>toneCurve</c> argument is null, skip.</item>
 ///   <item><b>XYZ_D50 → linear output RGB.</b> Bradford D50→D65 CAT is applied
 ///         for D65 output spaces; ProPhoto remains in D50.</item>
 /// </list>
