@@ -80,7 +80,7 @@ public class GoldenSyntheticOpcodeDiffTests
         float maxAbs = 0;
         for (int i = 0; i < n; i++)
         {
-            float managed = BinaryPrimitives.ReadSingleLittleEndian(managedBytes.Slice(i * 4, 4));
+            float managed = GoldenSampleIndexer.ReadFloat32(managedBytes, tile, i);
             float diff = System.Math.Abs(managed - nativePixels[i]);
             if (diff > maxAbs) maxAbs = diff;
         }

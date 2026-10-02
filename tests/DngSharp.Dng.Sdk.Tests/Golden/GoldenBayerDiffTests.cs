@@ -123,7 +123,7 @@ public class GoldenBayerDiffTests
 
         for (int i = 0; i < n; i++)
         {
-            float managed = BinaryPrimitives.ReadSingleLittleEndian(managedBytes.Slice(i * 4, 4));
+            float managed = GoldenSampleIndexer.ReadFloat32(managedBytes, managedTile, i);
             float native  = nativePixels[i];
             float diff = System.Math.Abs(managed - native);
             if (diff > maxAbs) maxAbs = diff;
