@@ -16,6 +16,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>DngSharp.Dng.Sdk</PackageId>
     <Description>Managed .NET port of the Adobe DNG SDK: core primitives, TIFF/IFD container parsing, pixel pipeline, JPEG/JPEG XL codec adapters, XMP metadata, and SkiaSharp-based preview rendering, bundled as a single package.</Description>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- This project builds an empty stub assembly of its own (no .cs
          files); that's fine — it ships alongside the 5 real DLLs in
@@ -34,6 +35,12 @@
     <ProjectReference Include="..\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\DngSharp.Dng.Sdk.Xmp\DngSharp.Dng.Sdk.Xmp.csproj" PrivateAssets="all" />
     <ProjectReference Include="..\DngSharp.Dng.Sdk.Preview\DngSharp.Dng.Sdk.Preview.csproj" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Package-page documentation. Rendered by NuGet clients from the root
+         of the package. -->
+    <None Include="$(MSBuildThisFileDirectory)..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -60,12 +67,26 @@
        build output (DLL + PDB) into this package's lib/net10.0/ folder. -->
   <PropertyGroup>
     <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);CopyProjectReferencesToPackage</TargetsForTfmSpecificContentInPackage>
   </PropertyGroup>
 
   <Target Name="CopyProjectReferencesToPackage" DependsOnTargets="ResolveReferences">
     <ItemGroup>
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('Extension', '.dll'))" />
-      <BuildOutputInPackage Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('Extension', '.pdb'))" />
+      <_PackagedProjectDll Include="@(ReferenceCopyLocalPaths->WithMetadataValue('ReferenceSourceTarget', 'ProjectReference')->WithMetadataValue('Extension', '.dll'))" />
+
+      <BuildOutputInPackage Include="@(_PackagedProjectDll)" />
+
+      <!-- Portable PDBs: NuGet filters .pdb out of the main package's lib/
+           folder and routes them into the .snupkg when IncludeSymbols is set. -->
+      <BuildOutputInPackage Include="@(_PackagedProjectDll->'%(RootDir)%(Directory)%(Filename).pdb')"
+                            Condition="Exists('%(RootDir)%(Directory)%(Filename).pdb')" />
+
+      <!-- IntelliSense docs. .xml is not an allowed build-output extension, so
+           these ship as explicit package content next to the assemblies. -->
+      <TfmSpecificPackageFile Include="@(_PackagedProjectDll->'%(RootDir)%(Directory)%(Filename).xml')"
+                              Condition="Exists('%(RootDir)%(Directory)%(Filename).xml')">
+        <PackagePath>lib\$(TargetFramework)\</PackagePath>
+      </TfmSpecificPackageFile>
     </ItemGroup>
   </Target>
 

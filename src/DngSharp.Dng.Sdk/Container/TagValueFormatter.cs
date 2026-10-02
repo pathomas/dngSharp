@@ -10,7 +10,7 @@ namespace DngSharp.Dng.Sdk.Container;
 /// Format a parsed <see cref="TiffIfdEntry"/>'s value for human inspection.
 /// Mirrors what <c>dng_validate -v</c> emits next to each tag.
 ///
-/// <para>Out-of-line payloads are read on demand via <paramref name="stream"/>.
+/// <para>Out-of-line payloads are read on demand via the <c>stream</c> argument.
 /// To keep diagnostic output bounded, arrays longer than
 /// <c>maxElements</c> are truncated with an "…" suffix.</para>
 /// </summary>

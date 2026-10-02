@@ -8,7 +8,7 @@ namespace DngSharp.Dng.Sdk.Math;
 /// Storage is a flat <c>double[Rows*Cols]</c> in row-major order. The C++
 /// version uses a fixed <c>real64[kMaxColorPlanes][kMaxColorPlanes]</c>
 /// buffer and a logical <c>(rows,cols)</c> shape; we use a tight array so
-/// we can later swap in <see cref="System.Numerics.Tensors"/>-backed kernels
+/// we can later swap in <c>System.Numerics.Tensors</c>-backed kernels
 /// without rewriting call sites.
 /// </summary>
 public sealed class DngMatrix : IEquatable<DngMatrix>
