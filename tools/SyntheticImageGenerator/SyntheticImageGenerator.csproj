@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -12,17 +12,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Dng.Sdk\Dng.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
   </ItemGroup>
 
   <!-- Reuse the exact pattern/DNG/TIFF builders already exercised by the
        xUnit regression suite, instead of duplicating them here, so this CLI
        and the test fixtures never drift apart. -->
   <ItemGroup>
-    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticPixelPatterns.cs" Link="TestImages\SyntheticPixelPatterns.cs" />
-    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticDngBuilder.cs" Link="TestImages\SyntheticDngBuilder.cs" />
-    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\SyntheticTiffBuilder.cs" Link="TestImages\SyntheticTiffBuilder.cs" />
-    <Compile Include="..\..\tests\Dng.Sdk.Tests\TestImages\OpcodeListTestBuilder.cs" Link="TestImages\OpcodeListTestBuilder.cs" />
+    <Compile Include="..\..\tests\DngSharp.Dng.Sdk.Tests\TestImages\SyntheticPixelPatterns.cs" Link="TestImages\SyntheticPixelPatterns.cs" />
+    <Compile Include="..\..\tests\DngSharp.Dng.Sdk.Tests\TestImages\SyntheticDngBuilder.cs" Link="TestImages\SyntheticDngBuilder.cs" />
+    <Compile Include="..\..\tests\DngSharp.Dng.Sdk.Tests\TestImages\SyntheticTiffBuilder.cs" Link="TestImages\SyntheticTiffBuilder.cs" />
+    <Compile Include="..\..\tests\DngSharp.Dng.Sdk.Tests\TestImages\OpcodeListTestBuilder.cs" Link="TestImages\OpcodeListTestBuilder.cs" />
   </ItemGroup>
 
 </Project>

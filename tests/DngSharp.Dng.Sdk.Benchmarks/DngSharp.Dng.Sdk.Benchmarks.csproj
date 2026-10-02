@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- BDN spawns a per-benchmark process; must be Exe. Property is also
+         set by Directory.Build.targets for *.Benchmarks projects. -->
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Jxl\DngSharp.Dng.Sdk.Jxl.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Gpu\DngSharp.Dng.Sdk.Gpu.csproj" />
+    <ProjectReference Include="..\..\src\DngSharp.Dng.Sdk.Preview\DngSharp.Dng.Sdk.Preview.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\MultiStripDngFactory.cs" Link="TestSupport\MultiStripDngFactory.cs" />
+  </ItemGroup>
+
+</Project>

@@ -111,12 +111,12 @@ Surfaced by the Phase 2 code review and accepted (intentionally not blocking):
 
 ### Phase 0 — Project scaffolding (1 week)
 - Solution layout:
-  - `src/Dng.Sdk/Dng.Sdk.csproj` — core library, `net10.0`, AOT-compatible.
-  - `src/Dng.Sdk.Jpeg/` — JPEG codec adapter (wraps managed lib).
-  - `src/Dng.Sdk.Jxl/` — JXL codec adapter (P/Invoke `libjxl`).
-  - `src/Dng.Sdk.Xmp/` — XMP adapter (P/Invoke `libxmp`).
-  - `src/Dng.Validate/` — CLI mirroring `dng_validate.cpp`.
-  - `tests/Dng.Sdk.Tests/` — xUnit, golden-file comparisons against C++ `dng_validate` output on the bundled sample files.
+  - `src/DngSharp.Dng.Sdk/DngSharp.Dng.Sdk.csproj` — core library, `net10.0`, AOT-compatible.
+  - `src/DngSharp.Dng.Sdk.Jpeg/` — JPEG codec adapter (wraps managed lib).
+  - `src/DngSharp.Dng.Sdk.Jxl/` — JXL codec adapter (P/Invoke `libjxl`).
+  - `src/DngSharp.Dng.Sdk.Xmp/` — XMP adapter (P/Invoke `libxmp`).
+  - `src/DngSharp.Dng.Validate/` — CLI mirroring `dng_validate.cpp`.
+  - `tests/DngSharp.Dng.Sdk.Tests/` — xUnit, golden-file comparisons against C++ `dng_validate` output on the bundled sample files.
 - CI: GitHub Actions matrix on `windows-latest` / `ubuntu-latest`, build + tests + AOT publish smoke test.
 - Add `Directory.Build.props` with `<TargetFramework>net10.0</TargetFramework>`, `<Nullable>enable</Nullable>`, `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`, `<IsAotCompatible>true</IsAotCompatible>`.
 - Set up golden-file harness: run native `dng_validate` on each sample → capture `-v` text dump, stage-1/2/3 TIFFs, rendered TIFF; check those into `tests/golden/`.
@@ -151,7 +151,7 @@ Port leaf headers with no DNG-specific dependencies:
 ### Phase 4 — Metadata domain types (2 weeks)
 - `dng_exif.{h,cpp}` (~81 KB).
 - `dng_iptc`.
-- `dng_xmp_sdk.{h,cpp}` → `IXmpSdk` interface; first impl is the P/Invoke adapter to `libxmp` from `src/Dng.Sdk.Xmp/`.
+- `dng_xmp_sdk.{h,cpp}` → `IXmpSdk` interface; first impl is the P/Invoke adapter to `libxmp` from `src/DngSharp.Dng.Sdk.Xmp/`.
 - `dng_xmp.{h,cpp}` (~92 KB) — DNG-specific XMP packet munging using `IXmpSdk`.
 - `dng_update_meta.{h,cpp}`.
 - `dng_shared.{h,cpp}` — shared parsing helpers used by `dng_info`/`dng_negative`.
@@ -177,11 +177,11 @@ Port leaf headers with no DNG-specific dependencies:
 - Verify stages 1/2/3 byte-for-byte against `dng_validate -1/-2/-3` goldens for at least one sample per compression code.
 
 ### Phase 7 — JPEG + JXL codec adapters (2 weeks, parallelizable with Phase 6)
-- `Dng.Sdk.Jpeg`: wrap `BitMiracle.LibJpeg.NetCore` (or equivalent), exposed as `IJpegEncoder`/`IJpegDecoder`. Cover baseline DCT (8-bit YCbCr/grayscale) and lossless Huffman JPEG (compression code 7).
+- `DngSharp.Dng.Sdk.Jpeg`: wrap `BitMiracle.LibJpeg.NetCore` (or equivalent), exposed as `IJpegEncoder`/`IJpegDecoder`. Cover baseline DCT (8-bit YCbCr/grayscale) and lossless Huffman JPEG (compression code 7).
 - `dng_lossless_jpeg.{h,cpp}` + `dng_lossless_jpeg_shared.cpp` (~90 KB) — lossless 16-bit JPEG isn't covered by managed libs; **port directly** to managed code. This is unavoidable.
 - `dng_jpeg_image`, `dng_jpeg_memory_source` — thin adapters.
-- `Dng.Sdk.Jxl`: `LibraryImport` against `libjxl.dll`/`.so`. Cover encode (distance/effort/decode-speed → `JXLDistance`/`JXLEffort`/`JXLDecodeSpeed`) and decode.
-- `dng_jxl.{h,cpp}` (~93 KB) — port the DNG-side glue (tile layout, container framing) on top of `Dng.Sdk.Jxl`.
+- `DngSharp.Dng.Sdk.Jxl`: `LibraryImport` against `libjxl.dll`/`.so`. Cover encode (distance/effort/decode-speed → `JXLDistance`/`JXLEffort`/`JXLDecodeSpeed`) and decode.
+- `dng_jxl.{h,cpp}` (~93 KB) — port the DNG-side glue (tile layout, container framing) on top of `DngSharp.Dng.Sdk.Jxl`.
 
 ### Phase 8 — Writer + previews (2 weeks)
 - `dng_image_writer.{h,cpp}` (~214 KB — second largest file). Must enforce:

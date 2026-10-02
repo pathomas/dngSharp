@@ -8,8 +8,8 @@ file; `STATUS.md` carries the current snapshot.
 
 Created the .NET 10 solution shell on top of the vendored Adobe DNG SDK 1.7.1:
 
-- `Dng.slnx` + 6 projects: `Dng.Sdk`, `Dng.Sdk.Jpeg`, `Dng.Sdk.Jxl`,
-  `Dng.Sdk.Xmp`, `Dng.Validate` (CLI), `Dng.Sdk.Tests` (xUnit).
+- `Dng.slnx` + 6 projects: `DngSharp.Dng.Sdk`, `DngSharp.Dng.Sdk.Jpeg`, `DngSharp.Dng.Sdk.Jxl`,
+  `DngSharp.Dng.Sdk.Xmp`, `DngSharp.Dng.Validate` (CLI), `DngSharp.Dng.Sdk.Tests` (xUnit).
 - `Directory.Build.props` — `net10.0`, nullable on, warnings-as-errors,
   `AllowUnsafeBlocks=true` (user preference), AOT-friendly defaults,
   Deterministic builds.
@@ -67,7 +67,7 @@ Stood up the parsing layer all the way to walking a real DNG file's IFD tree.
   preview / mask / depth / enhanced / gain-map / semantic-mask indices.
   Cycle detection via `HashSet<long>` of visited offsets.
 
-The minimal `Dng.Validate` CLI prints per-file summaries; verified against all
+The minimal `DngSharp.Dng.Validate` CLI prints per-file summaries; verified against all
 14 sample DNGs, correctly identifying JXL compression, LinearRaw / CFA
 photometric, and image dimensions (e.g. `01_jxl_linear_raw_integer.dng` →
 9504×6336, comp=Jxl).
@@ -272,10 +272,10 @@ Kickoff work landed:
 
 - Reconciled STATUS.md with PORTING_PLAN.md — STATUS was stale at phases 0-6/245 tests; actual state was phases 0-9/282 tests.
 - Extended 'tests/golden/capture.ps1' with '-VerboseOnly' so the fast '-v' tier can be regenerated without the slow JXL stage decodes; captured tier-1 goldens for all 14 sample DNGs.
-- New 'tests/Dng.Sdk.Tests/Golden/':
+- New 'tests/DngSharp.Dng.Sdk.Tests/Golden/':
   - 'NativeVerboseParser' — structural parser for 'dng_validate -v' output. Swallows inline 'ExtraCameraProfile [N]:', 'MakerNote:', 'IPTC-NAA:' sub-blocks so their tag lines don't get mis-attributed to the parent IFD 0.
   - 'GoldenVerboseDiffTests' — one xUnit theory case per sample. Asserts byte order, BigTIFF magic, IFD 0 offset, IFD 0 entry count, and IFD 0 tag set match the managed 'DngContainer'. 14/14 pass. Tests silently skip when goldens are absent so the suite stays green without the native binary.
-- New 'tests/Dng.Sdk.Benchmarks/' project (BenchmarkDotNet). Currently one benchmark — 'ContainerParseBenchmarks.Parse' over 4 representative samples (240 KB uncompressed, 5.7 MB SubIFD-heavy, 1.2 MB ExtraCameraProfiles, 24 MB JXL). Anchors the parse-only cost that every pipeline stage pays.
+- New 'tests/DngSharp.Dng.Sdk.Benchmarks/' project (BenchmarkDotNet). Currently one benchmark — 'ContainerParseBenchmarks.Parse' over 4 representative samples (240 KB uncompressed, 5.7 MB SubIFD-heavy, 1.2 MB ExtraCameraProfiles, 24 MB JXL). Anchors the parse-only cost that every pipeline stage pays.
 - 'Directory.Build.targets' now recognises '*.Benchmarks' projects and applies the same AOT/trim/warning relaxations as tests.
 - 'ci.yml' fixed ('Dng.sln' → 'Dng.slnx' — the .sln didn't exist and CI must have been red); AOT smoke job extended to macos-latest (osx-arm64) with a real '-v' smoke run against a sample DNG.
 

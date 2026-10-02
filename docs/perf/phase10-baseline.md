@@ -19,7 +19,7 @@ Job=ShortRun  IterationCount=3  LaunchCount=1  WarmupCount=3
 Reproduce:
 
 ```powershell
-dotnet run --project tests\Dng.Sdk.Benchmarks -c Release --no-build -- \
+dotnet run --project tests\DngSharp.Dng.Sdk.Benchmarks -c Release --no-build -- \
     --filter *ContainerParseBenchmarks* --job Short
 ```
 

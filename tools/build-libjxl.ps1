@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Builds libjxl from the vendored source and places the shared library
-    where Dng.Sdk.Jxl.csproj expects it.
+    where DngSharp.Dng.Sdk.Jxl.csproj expects it.
 
 .DESCRIPTION
     Mirrors the CI `build-libjxl` job so local development works without
@@ -40,7 +40,7 @@ if ($IsWindows) {
     $libname = 'libjxl.dylib'
 }
 
-$outDir = Join-Path $repoRoot "src\Dng.Sdk.Jxl\runtimes\$rid\native"
+$outDir = Join-Path $repoRoot "src\DngSharp.Dng.Sdk.Jxl\runtimes\$rid\native"
 $outLib = Join-Path $outDir $libname
 
 if ((Test-Path $outLib) -and -not $Rebuild) {

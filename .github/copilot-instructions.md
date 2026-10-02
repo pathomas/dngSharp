@@ -2,7 +2,7 @@
 
 This repository contains **two parallel codebases**:
 
-1. **`src/Dng.Sdk*` + `src/Dng.Validate` + `tests/Dng.Sdk.Tests`** — the active
+1. **`src/DngSharp.Dng.Sdk*` + `src/DngSharp.Dng.Validate` + `tests/DngSharp.Dng.Sdk.Tests`** — the active
    .NET 10 (C#) port of the Adobe DNG SDK. This is where new feature work
    happens. See `PORTING_PLAN.md` for the full phased plan.
 2. **`dng_sdk_1_7_1/`** — the vendored Adobe DNG SDK 1.7.1 (C++17). This is
@@ -27,7 +27,7 @@ Directory.Build.props                 net10.0, nullable on, warnings-as-errors,
 Directory.Build.targets               test-project overrides (no AOT/trim,
                                       relaxed analyzer rules)
 Directory.Packages.props              Central Package Management
-src/Dng.Sdk/                          core managed port (Phase 1+)
+src/DngSharp.Dng.Sdk/                          core managed port (Phase 1+)
   DngLimits.cs, DngSdkInfo.cs
   Errors/                             DngError enum, DngException, DngThrow helpers
   Math/                               SafeArith, DngMath, DngMatrix, DngVector
@@ -42,14 +42,20 @@ src/Dng.Sdk/                          core managed port (Phase 1+)
                                       (NewSubFileType / Compression / etc.),
                                       DngTagCode (auto-generated)              (Phase 2)
   Container/                          TiffHeader, TiffIfd, TiffIfdEntry        (Phase 2)
-src/Dng.Sdk.Jpeg/                     JPEG codec adapter (Phase 7 stub)
-src/Dng.Sdk.Jxl/                      JPEG XL codec adapter (Phase 7 stub,
+src/DngSharp.Dng.Sdk.Jpeg/                     JPEG codec adapter (Phase 7 stub)
+src/DngSharp.Dng.Sdk.Jxl/                      JPEG XL codec adapter (Phase 7 stub,
                                       will P/Invoke libjxl)
-src/Dng.Sdk.Xmp/                      XMP adapter (Phase 4 stub, will P/Invoke
+src/DngSharp.Dng.Sdk.Xmp/                      XMP adapter (Phase 4 stub, will P/Invoke
                                       libxmp)
-src/Dng.Validate/                     CLI mirroring dng_validate.cpp
+src/DngSharp.Dng.Sdk.Gpu/                      opt-in ILGPU back-end: linearize →
+                                      demosaic → colour → tone map → RGB8 as
+                                      device-resident kernels (NOT AOT; never
+                                      reference from Validate)
+src/DngSharp.Dng.Validate/                     CLI mirroring dng_validate.cpp
                                       (Phase 9 — currently a banner stub)
-tests/Dng.Sdk.Tests/                  xUnit tests, snake_case names allowed
+tests/DngSharp.Dng.Sdk.Tests/                  xUnit tests, snake_case names allowed
+tests/DngSharp.Dng.Sdk.Gpu.Tests/              GPU-vs-CPU equivalence (CPU accelerator
+                                      by default; DNGSHARP_GPU_BACKEND=cuda)
 tests/golden/capture.ps1              regenerates reference outputs from the
                                       native dng_validate
 tools/extract-tag-codes.ps1           regenerates Tiff/DngTagCode.cs from
@@ -61,14 +67,14 @@ tools/extract-tag-codes.ps1           regenerates Tiff/DngTagCode.cs from
 ```powershell
 dotnet build Dng.slnx -c Release        # 0 warnings, 0 errors expected
 dotnet test Dng.slnx -c Release         # xUnit suite
-dotnet run --project src/Dng.Validate   # CLI smoke (Phase 9 stub today)
+dotnet run --project src/DngSharp.Dng.Validate   # CLI smoke (Phase 9 stub today)
 ```
 
 AOT publish smoke test (requires Developer Command Prompt locally for the
 native link step; CI runs it on `windows-latest` / `ubuntu-latest`):
 
 ```powershell
-dotnet publish src/Dng.Validate -c Release -r win-x64 --self-contained -p:PublishAot=true
+dotnet publish src/DngSharp.Dng.Validate -c Release -r win-x64 --self-contained -p:PublishAot=true
 ```
 
 ### .NET port conventions
@@ -81,7 +87,15 @@ dotnet publish src/Dng.Validate -c Release -r win-x64 --self-contained -p:Publis
   `Span<T>` + `BinaryPrimitives`.
 - **AOT-compatible by default** (`IsAotCompatible=true`, `IsTrimmable=true`,
   `InvariantGlobalization=true`). Test projects opt out via
-  `Directory.Build.targets`.
+  `Directory.Build.targets`. `DngSharp.Dng.Sdk.Gpu` also opts out (ILGPU
+  JIT-compiles kernels via reflection) — keep it out of the AOT-published
+  Validate CLI's dependency graph.
+- **GPU kernels are mirrors, not sources of truth.** Every kernel in
+  `Gpu/GpuKernels.cs` ports a CPU routine (`Stage2Builder`,
+  `DemosaicBilinear`, `Stage3Renderer`, `HdrToneMapper`). Change the CPU
+  routine first, then the kernel, then run `tests/DngSharp.Dng.Sdk.Gpu.Tests`
+  (tolerance-based; see `docs/perf/phase10-gpu.md`). Opcode lists are not
+  ported — `GpuRenderPipeline.RenderToRgb8` assumes they are empty.
 - **Central Package Management:** add NuGet packages to
   `Directory.Packages.props`, never inline `<PackageReference Version=…>`.
 - **POD-style field surface is intentional** for types that mirror C++ layout
@@ -96,7 +110,7 @@ dotnet publish src/Dng.Validate -c Release -r win-x64 --self-contained -p:Publis
 - **Two-phase parse mirrors the C++ SDK.** When the port catches up, expect
   `Parse(...)` followed by `PostParse(...)` on container/negative types.
   Treating `Parse` as complete is a bug there too.
-- **Tag-code enum is generated.** `src/Dng.Sdk/Tiff/DngTagCode.cs` carries a
+- **Tag-code enum is generated.** `src/DngSharp.Dng.Sdk/Tiff/DngTagCode.cs` carries a
   `// <auto-generated />` header. To regenerate after the vendored SDK is
   upgraded, run `pwsh tools/extract-tag-codes.ps1`. Don't hand-edit the
   generated file; add or fix tags in the source header (or the script).

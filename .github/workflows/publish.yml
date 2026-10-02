@@ -1,8 +1,8 @@
 name: publish
 
-# Builds AOT self-contained Dng.Validate CLI binaries for win-x64, linux-x64,
+# Builds AOT self-contained DngSharp.Dng.Validate CLI binaries for win-x64, linux-x64,
 # and osx-arm64, packages each into an archive, and attaches them to a
-# GitHub Release. Also builds the Dng.Sdk* class libraries and publishes them
+# GitHub Release. Also builds the DngSharp.Dng.Sdk* class libraries and publishes them
 # as NuGet packages to GitHub Packages as well as per-RID DLL archives (the
 # latter bundle the RID-specific native libjxl asset) attached to the
 # release. Triggered by pushing a version tag (v*.*.*) or manually via
@@ -35,7 +35,7 @@ jobs:
   build-libjxl:
     uses: ./.github/workflows/build-libjxl.yml
 
-  # ── AOT-publish Dng.Validate per RID, package into an archive ─────────────
+  # ── AOT-publish DngSharp.Dng.Validate per RID, package into an archive ─────────────
   publish:
     needs: build-libjxl
     strategy:
@@ -44,13 +44,13 @@ jobs:
         include:
           - os: windows-latest
             rid: win-x64
-            exe: Dng.Validate.exe
+            exe: DngSharp.Dng.Validate.exe
           - os: ubuntu-latest
             rid: linux-x64
-            exe: Dng.Validate
+            exe: DngSharp.Dng.Validate
           - os: macos-latest
             rid: osx-arm64
-            exe: Dng.Validate
+            exe: DngSharp.Dng.Validate
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -66,14 +66,14 @@ jobs:
           name: libjxl-${{ matrix.rid }}
           path: libjxl-native
 
-      # Place libjxl in the Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
+      # Place libjxl in the DngSharp.Dng.Sdk.Jxl project's runtimes/<rid>/native/ dir
       # so the <None Include="runtimes/**"> glob in the .csproj copies it to
-      # every output directory that references Dng.Sdk.Jxl.
+      # every output directory that references DngSharp.Dng.Sdk.Jxl.
       - name: Place libjxl runtime asset
         shell: bash
         run: |
-          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
-          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+          mkdir -p src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
 
       - name: Determine version
         id: version
@@ -85,9 +85,9 @@ jobs:
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: AOT publish Dng.Validate (${{ matrix.rid }})
+      - name: AOT publish DngSharp.Dng.Validate (${{ matrix.rid }})
         run: >
-          dotnet publish src/Dng.Validate/Dng.Validate.csproj
+          dotnet publish src/DngSharp.Dng.Validate/DngSharp.Dng.Validate.csproj
           -c Release
           -r ${{ matrix.rid }}
           --self-contained
@@ -98,7 +98,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          out_dir=$(find src/DngSharp.Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
           if [ -z "$out_dir" ]; then echo "publish output not found" >&2; exit 1; fi
 
           name="dng-validate-${{ steps.version.outputs.version }}-${{ matrix.rid }}"
@@ -120,7 +120,7 @@ jobs:
       - name: Smoke-run AOT binary against a sample DNG
         shell: bash
         run: |
-          out_dir=$(find src/Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
+          out_dir=$(find src/DngSharp.Dng.Validate/bin/Release -type d -name publish -path "*/${{ matrix.rid }}/*")
           exe="$out_dir/${{ matrix.exe }}"
           if [ ! -f "$exe" ]; then echo "AOT binary not found at $exe" >&2; exit 1; fi
           echo "Running $exe"
@@ -133,7 +133,7 @@ jobs:
           path: ${{ steps.package.outputs.archive }}
           if-no-files-found: error
 
-  # ── pack Dng.Sdk* managed libraries as NuGet packages ──────────────────────
+  # ── pack DngSharp.Dng.Sdk* managed libraries as NuGet packages ──────────────────────
   pack-sdk-nuget:
     runs-on: ubuntu-latest
     steps:
@@ -168,15 +168,13 @@ jobs:
           fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
 
-      - name: Pack Dng.Sdk* NuGet packages
+      - name: Pack DngSharp.Dng.Sdk NuGet package
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p dist/nuget
-          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
-            dotnet pack "src/$proj/$proj.csproj" -c Release -o dist/nuget \
-              -p:PackageVersion=${{ steps.nuget-version.outputs.version }}
-          done
+          dotnet pack "src/DngSharp.Dng.Sdk.Package/DngSharp.Dng.Sdk.Package.csproj" -c Release -o dist/nuget \
+            -p:PackageVersion=${{ steps.nuget-version.outputs.version }}
 
       - name: Upload NuGet packages artifact
         uses: actions/upload-artifact@v4
@@ -194,8 +192,8 @@ jobs:
             --api-key "${{ secrets.GITHUB_TOKEN }}" \
             --skip-duplicate
 
-  # ── build Dng.Sdk* class libraries and package the DLLs per-RID ───────────
-  # (per-RID because Dng.Sdk.Jxl bundles a RID-specific native libjxl asset)
+  # ── build DngSharp.Dng.Sdk* class libraries and package the DLLs per-RID ───────────
+  # (per-RID because DngSharp.Dng.Sdk.Jxl bundles a RID-specific native libjxl asset)
   publish-sdk-dlls:
     needs: build-libjxl
     strategy:
@@ -226,8 +224,8 @@ jobs:
       - name: Place libjxl runtime asset
         shell: bash
         run: |
-          mkdir -p src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
-          cp libjxl-native/* src/Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
+          mkdir -p src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native
+          cp libjxl-native/* src/DngSharp.Dng.Sdk.Jxl/runtimes/${{ matrix.rid }}/native/
 
       - name: Determine version
         id: version
@@ -239,11 +237,11 @@ jobs:
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build Dng.Sdk* class libraries (${{ matrix.rid }})
+      - name: Build DngSharp.Dng.Sdk* class libraries (${{ matrix.rid }})
         shell: bash
         run: |
           set -euo pipefail
-          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
+          for proj in DngSharp.Dng.Sdk DngSharp.Dng.Sdk.Jpeg DngSharp.Dng.Sdk.Jxl DngSharp.Dng.Sdk.Xmp DngSharp.Dng.Sdk.Preview; do
             dotnet build "src/$proj/$proj.csproj" -c Release
           done
 
@@ -257,8 +255,8 @@ jobs:
           mkdir -p "$out"
 
           # Merge each project's output dir. Later copies replace identical
-          # shared dependencies (e.g. Dng.Sdk.dll).
-          for proj in Dng.Sdk Dng.Sdk.Jpeg Dng.Sdk.Jxl Dng.Sdk.Xmp Dng.Sdk.Preview; do
+          # shared dependencies (e.g. DngSharp.Dng.Sdk.dll).
+          for proj in DngSharp.Dng.Sdk DngSharp.Dng.Sdk.Jpeg DngSharp.Dng.Sdk.Jxl DngSharp.Dng.Sdk.Xmp DngSharp.Dng.Sdk.Preview; do
             cp -R "src/$proj/bin/Release/net10.0/." "$out/"
           done
 
@@ -284,21 +282,21 @@ jobs:
     needs: [publish, pack-sdk-nuget, publish-sdk-dlls]
     runs-on: ubuntu-latest
     steps:
-      - name: Download Dng.Validate archives
+      - name: Download DngSharp.Dng.Validate archives
         uses: actions/download-artifact@v4
         with:
           pattern: dng-validate-*
           path: dist
           merge-multiple: true
 
-      - name: Download Dng.Sdk DLL archives
+      - name: Download DngSharp.Dng.Sdk DLL archives
         uses: actions/download-artifact@v4
         with:
           pattern: dng-sdk-dlls-*
           path: dist
           merge-multiple: true
 
-      - name: Download Dng.Sdk NuGet packages
+      - name: Download DngSharp.Dng.Sdk NuGet packages
         uses: actions/download-artifact@v4
         with:
           name: dng-sdk-nuget

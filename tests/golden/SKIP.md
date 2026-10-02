@@ -17,7 +17,7 @@ for this sample:
    contiguous ~H/2×W/2 "field" blocks (one per Bayer quadrant) rather than
    plain raster order, presumably so the JXL encoder can compress each
    quadrant as a smooth, independent sub-image. ✅ **Fixed** — see
-   `RowColumnInterleave.Decode` (`src/Dng.Sdk/Pipeline/RowColumnInterleave.cs`),
+   `RowColumnInterleave.Decode` (`src/DngSharp.Dng.Sdk/Pipeline/RowColumnInterleave.cs`),
    wired into `StripReader.ReadStage1` right after strip/tile decode.
 2. **Bilinear demosaic** (native "Interpolate" timer) — native builds a
    per-CFA-pattern-position kernel (`dng_bilinear_pattern::Calculate` in
@@ -39,7 +39,7 @@ for this sample:
    meaningful discrepancy found here either.
 3. **WarpRectilinear opcode ID enum mismatch** — 🔴 **root cause found and
    fixed this session**. The managed `OpcodeId` enum
-   (`src/Dng.Sdk/Imaging/Opcodes/OpcodeId.cs`) used numeric values that did
+   (`src/DngSharp.Dng.Sdk/Imaging/Opcodes/OpcodeId.cs`) used numeric values that did
    **not** match native's `dng_opcode_id` (`dng_sdk_1_7_1/.../dng_opcodes.h`,
    a 0-based sequential enum: `Private=0, WarpRectilinear=1, WarpFisheye=2,
    FixVignetteRadial=3, FixBadPixelsConstant=4, FixBadPixelsList=5,

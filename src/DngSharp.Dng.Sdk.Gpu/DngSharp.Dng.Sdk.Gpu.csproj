@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\DngSharp.Dng.Sdk\DngSharp.Dng.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ILGPU" />
+    <PackageReference Include="ILGPU.Algorithms" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Opt-in GPU back-end. Not bundled into the DngSharp.Dng.Sdk nupkg and
+         not referenced by the AOT-published Validate CLI: ILGPU compiles
+         kernel IL to PTX / OpenCL C / x86 at runtime via reflection, which is
+         incompatible with NativeAOT and trimming. -->
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <IsTrimmable>false</IsTrimmable>
+    <Description>ILGPU (CUDA / OpenCL / CPU) back-end for the DngSharp.Dng.Sdk render pipeline: device-resident linearize → demosaic → colour transform → SDR RGB8.</Description>
+
+    <!-- CA1515: ILGPU kernel entry points must be public static methods on a
+         public type so the runtime can reflect over them. -->
+    <NoWarn>$(NoWarn);CA1515</NoWarn>
+  </PropertyGroup>
+
+</Project>
