@@ -112,7 +112,6 @@ public static class PixelKernels
     public static void Fill<T>(PixelBuffer buffer, T value) where T : unmanaged
     {
         var span = buffer.AsTypedSpan<T>();
-
         // Whole-buffer views: one fill covers exactly the logical area.
         long logical = (long)buffer.Area.W * buffer.Area.H * buffer.Planes;
         if (span.Length == logical)

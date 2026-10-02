@@ -628,6 +628,58 @@ static class Cli
     }
 
     /// <summary>
+    /// Finds the smallest rect that retains at least one fully opaque pixel
+    /// on each edge, excluding transparent sensor margins from the output.
+    /// </summary>
+    private static DngSharp.Dng.Sdk.Primitives.DngRect? FindOpaqueBoundingBox(DngSharp.Dng.Sdk.Imaging.SimpleImage mask)
+    {
+        int w = (int)mask.Bounds.W, h = (int)mask.Bounds.H;
+        var tile = mask.GetTile(mask.Bounds);
+
+        double maxValue = mask.PixelType switch
+        {
+            DngSharp.Dng.Sdk.Pixels.PixelType.UInt8 => 255.0,
+            DngSharp.Dng.Sdk.Pixels.PixelType.UInt16 => 65535.0,
+            DngSharp.Dng.Sdk.Pixels.PixelType.Float32 => 1.0,
+            _ => 255.0,
+        };
+        double opaqueThreshold = maxValue - System.Math.Max(maxValue * 1e-6, 0.5);
+
+        bool RowHasOpaquePixel(Func<int, double> valueAt, int row)
+        {
+            int rowBase = row * w;
+            for (int c = 0; c < w; c++)
+                if (valueAt(rowBase + c) >= opaqueThreshold) return true;
+            return false;
+        }
+
+        bool ColHasOpaquePixel(Func<int, double> valueAt, int col)
+        {
+            for (int r = 0; r < h; r++)
+                if (valueAt(r * w + col) >= opaqueThreshold) return true;
+            return false;
+        }
+
+        Func<int, double>? valueAt = mask.PixelType switch
+        {
+            DngSharp.Dng.Sdk.Pixels.PixelType.UInt8 => i => tile.AsTypedSpan<byte>()[i],
+            DngSharp.Dng.Sdk.Pixels.PixelType.UInt16 => i => tile.AsTypedSpan<ushort>()[i],
+            DngSharp.Dng.Sdk.Pixels.PixelType.Float32 => i => tile.AsTypedSpan<float>()[i],
+            _ => null,
+        };
+        if (valueAt is null) return null;
+
+        int top = 0, bottom = h, left = 0, right = w;
+        while (top < bottom && !RowHasOpaquePixel(valueAt, top)) top++;
+        while (bottom > top && !RowHasOpaquePixel(valueAt, bottom - 1)) bottom--;
+        while (left < right && !ColHasOpaquePixel(valueAt, left)) left++;
+        while (right > left && !ColHasOpaquePixel(valueAt, right - 1)) right--;
+
+        if (top >= bottom || left >= right) return null;
+        return new DngSharp.Dng.Sdk.Primitives.DngRect(top, left, bottom, right);
+    }
+
+    /// <summary>
     /// Per-step wall-clock reporter behind <c>-timing</c>, in the spirit of
     /// dng_validate's "Raw image read time" / "Linearization time" lines.
     /// </summary>
