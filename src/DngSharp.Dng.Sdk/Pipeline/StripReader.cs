@@ -151,13 +151,16 @@ public static class StripReader
                 DngThrow.NotYetImplemented("StripReader: PlanarConfiguration=2 (planar) is not yet supported");
         }
 
+        var predictor = ifd.Find(DngTagCode.Predictor) is { } predEntry
+                        ? (Predictor)predEntry.GetScalarUInt(be) : Predictor.None;
+
         // Detect strip vs tile layout.
         bool isTiled = ifd.Find(DngTagCode.TileOffsets) is not null;
 
         if (isTiled)
-            ReadTiles(stream, ifd, be, image, planes, pixelType, decoder, host);
+            ReadTiles(stream, ifd, be, image, planes, pixelType, decoder, predictor, host);
         else
-            ReadStrips(stream, ifd, be, image, imageWidth, imageHeight, planes, pixelType, decoder, host);
+            ReadStrips(stream, ifd, be, image, imageWidth, imageHeight, planes, pixelType, decoder, predictor, host);
 
         // Reverse row/column interleaving (DNG 1.7.1 RowInterleaveFactor /
         // ColumnInterleaveFactor tags), when present. The raw strip/tile data
@@ -174,6 +177,7 @@ public static class StripReader
 
         return (image, photometric, pixelType, isFloat);
     }
+
 
     /// <summary>
     /// Decode the DNG's transparency-mask IFD (<c>NewSubFileType</c> 4/5), if
@@ -221,6 +225,7 @@ public static class StripReader
         uint planes,
         PixelType pixelType,
         IRawDecoder decoder,
+        Predictor predictor,
         DngHost? host)
     {
         uint rowsPerStrip = ifd.Find(DngTagCode.RowsPerStrip) is { } rps
@@ -251,7 +256,7 @@ public static class StripReader
             uint stripHeight = (uint)System.Math.Min((long)rowsPerStrip, (long)(imageHeight - stripTop));
 
             var dstArea = new DngRect((int)stripTop, 0, (int)(stripTop + stripHeight), (int)imageWidth);
-            DecodeInto(decoder, blobs[i], be, dstArea, dstArea, planes, pixelType, image);
+            DecodeInto(decoder, blobs[i], be, dstArea, dstArea, planes, pixelType, image, predictor);
         });
     }
 
@@ -265,14 +270,21 @@ public static class StripReader
     private static void DecodeInto(
         IRawDecoder decoder, byte[] blob, bool be,
         DngRect codedArea, DngRect dstArea,
-        uint planes, PixelType pixelType, SimpleImage image)
+        uint planes, PixelType pixelType, SimpleImage image,
+        Predictor predictor)
     {
+        // FP-predicted data is a byte-shuffled stream; PredictorDecoder.Undo
+        // restores host order itself, so the codec must not byte-swap first.
+        bool codecBe = PredictorDecoder.IsFloatingPoint(predictor) ? false : be;
+
         // Single-plane, full-width strips: planar and interleaved layouts
         // coincide and the image tile is a compact row-major block, so the
         // codec can write straight into it (no scratch, no copy).
         if (planes == 1 && codedArea == dstArea && dstArea.W == image.Bounds.W)
         {
-            decoder.Decode(blob, image.GetTile(dstArea), be);
+            var tile = image.GetTile(dstArea);
+            decoder.Decode(blob, tile, codecBe);
+            PredictorDecoder.Undo(tile, predictor);
             return;
         }
 
@@ -282,7 +294,8 @@ public static class StripReader
         try
         {
             var scratch = PixelBuffer.Interleaved(codedArea, planes, pixelType, rented.AsMemory(0, required));
-            decoder.Decode(blob, scratch, be);
+            decoder.Decode(blob, scratch, codecBe);
+            PredictorDecoder.Undo(scratch, predictor);
             PixelKernels.Copy(scratch.SubView(dstArea), image.GetTile(dstArea));
         }
         finally
@@ -301,6 +314,7 @@ public static class StripReader
         uint planes,
         PixelType pixelType,
         IRawDecoder decoder,
+        Predictor predictor,
         DngHost? host)
     {
         uint tileW = RequireScalar(ifd, DngTagCode.TileWidth,  be);
@@ -343,7 +357,7 @@ public static class StripReader
             var dstArea = new DngRect(
                 (int)tileTop, (int)tileLeft,
                 (int)(tileTop + tileActH), (int)(tileLeft + tileActW));
-            DecodeInto(decoder, blobs[idx], be, codedArea, dstArea, planes, pixelType, image);
+            DecodeInto(decoder, blobs[idx], be, codedArea, dstArea, planes, pixelType, image, predictor);
         });
     }
 

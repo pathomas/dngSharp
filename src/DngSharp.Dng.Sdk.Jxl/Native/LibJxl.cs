@@ -22,6 +22,28 @@ internal static partial class LibJxl
     // "jxl" resolves to: jxl.dll (Windows), libjxl.so (Linux), libjxl.dylib (macOS).
     private const string Library = "jxl";
 
+    static LibJxl()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(LibJxl).Assembly, Resolve);
+    }
+
+    // Distro packages ship only the versioned soname (no -dev symlink), so fall
+    // back to those before giving up.
+    private static nint Resolve(string name, System.Reflection.Assembly asm, DllImportSearchPath? path)
+    {
+        if (name != Library) return nint.Zero;
+        if (NativeLibrary.TryLoad(name, asm, path, out nint h)) return h;
+
+        string[] candidates = OperatingSystem.IsMacOS()
+            ? ["libjxl.0.11.dylib", "libjxl.0.dylib"]
+            : OperatingSystem.IsWindows()
+                ? []
+                : ["libjxl.so.0.11", "libjxl.so.0"];
+        foreach (var c in candidates)
+            if (NativeLibrary.TryLoad(c, out h)) return h;
+        return nint.Zero;
+    }
+
     // ── Enums ──────────────────────────────────────────────────────────────
 
     /// <summary>JxlSignature — result of <see cref="JxlSignatureCheck"/>.</summary>
