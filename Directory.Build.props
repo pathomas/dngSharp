@@ -42,6 +42,14 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
+    <!-- Version defaults. Release builds override this wholesale with
+         -p:Version=<semver> (see .github/workflows/publish.yml), which sets
+         AssemblyVersion / FileVersion / InformationalVersion / PackageVersion.
+         Local and CI builds stay at 0.0.0-dev so an unversioned DLL is never
+         mistaken for a release. -->
+    <VersionPrefix>0.0.0</VersionPrefix>
+    <VersionSuffix Condition="'$(VersionSuffix)' == ''">dev</VersionSuffix>
+
     <!-- Repo metadata -->
     <Company>dng-net contributors</Company>
     <Product>DngSharp.Dng.Sdk</Product>
